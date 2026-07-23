@@ -1,10 +1,7 @@
 import os
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi import Request
 
 app = FastAPI()
 
@@ -16,14 +13,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключаем папки со статикой и шаблонами
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+# Отдаем HTML страницу
+@app.get("/")
+async def read_root():
+    return FileResponse("index.html")
 
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    # Отдаем отдельный HTML файл
-    return templates.TemplateResponse("index.html", {"request": request})
+# Отдаем скрипты
+@app.get("/script.js")
+async def get_script():
+    return FileResponse("script.js")
+
+# Отдаем стили
+@app.get("/style.css")
+async def get_style():
+    return FileResponse("style.css")
 
 @app.get("/api/health")
 def health_check():
