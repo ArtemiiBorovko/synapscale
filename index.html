@@ -36,6 +36,15 @@
                     <div id="options-container" class="options"></div>
                     <button id="start-btn" class="action-btn" onclick="startLesson()">Начать</button>
                 </div>
+                <div id="chat-section" class="card">
+                    <h3>💬 Спроси профессора Фила</h3>
+                    <div id="chat-log"></div>
+                    <div class="chat-controls">
+                        <button id="mic-btn" class="mic-btn" title="Нажми и говори">🎤</button>
+                        <input type="text" id="chat-input" placeholder="Напиши или продиктуй..." autocomplete="off">
+                        <button id="send-btn" class="action-btn" onclick="sendMessage()">Отправить</button>
+                    </div>
+                </div>
                 <div id="feedback" class="feedback hidden"></div>
             </main>
         </div>
