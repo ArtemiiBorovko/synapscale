@@ -1,4 +1,3 @@
-import telebot
 import os
 import json
 import requests
@@ -23,7 +22,6 @@ from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
 # 1. ТОКЕНЫ И НАСТРОЙКА (Безопасное чтение из переменных окружения)
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
@@ -33,7 +31,6 @@ RENDER_APP_URL = os.getenv("RENDER_EXTERNAL_URL", "https://ruleguard-backend.onr
 if not all([TELEGRAM_TOKEN, GROQ_API_KEY, DATABASE_URL, TAVILY_API_KEY]):
     print("⚠️ ВНИМАНИЕ: Не все переменные окружения настроены на сервере!")
 
-bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 engine = create_engine(DATABASE_URL)
 app = FastAPI()
