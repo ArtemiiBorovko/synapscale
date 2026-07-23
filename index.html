@@ -8,24 +8,40 @@
 </head>
 <body>
     <div class="app-container">
-        <header>
-            <h1>Тренировка Ума 🧠</h1>
-            <div class="score-board">Очки: <span id="score">0</span></div>
-        </header>
+        
+        <!-- ЭКРАН 1: Приветствие и знакомство -->
+        <div id="welcome-screen">
+            <div class="teacher-icon">🦉</div>
+            <h1>Привет!</h1>
+            <p class="teacher-speech">Я профессор Фил. А как зовут тебя?</p>
+            
+            <input type="text" id="username" placeholder="Моё имя..." autocomplete="off">
+            <br>
+            <button class="action-btn" onclick="saveNameAndStart()">Познакомиться</button>
+        </div>
 
-        <main id="lesson-container">
-            <!-- Сюда JavaScript будет подставлять вопросы -->
-            <div id="question-box" class="card">
-                <h2 id="question-text">Нажми "Начать", чтобы запустить первый урок!</h2>
-                <div id="image-container"></div>
-                <div id="options-container" class="options"></div>
-                <button id="start-btn" class="action-btn" onclick="startLesson()">Начать</button>
-            </div>
-            <div id="feedback" class="feedback hidden"></div>
-        </main>
+        <!-- ЭКРАН 2: Уроки (Скрыт по умолчанию) -->
+        <div id="main-screen" class="hidden">
+            <header class="top-bar">
+                <button class="back-btn" onclick="goBack()" title="Сменить имя">🔙 Назад</button>
+                <div class="score-board">Очки: <span id="score">0</span></div>
+            </header>
+
+            <h1 id="greeting">Тренировка Ума 🧠</h1>
+            
+            <main id="lesson-container">
+                <div id="question-box" class="card">
+                    <h2 id="question-text">Нажми "Начать", чтобы запустить урок!</h2>
+                    <div id="image-container"></div>
+                    <div id="options-container" class="options"></div>
+                    <button id="start-btn" class="action-btn" onclick="startLesson()">Начать</button>
+                </div>
+                <div id="feedback" class="feedback hidden"></div>
+            </main>
+        </div>
+
     </div>
 
-    <!-- Подключаем логику -->
     <script src="/script.js"></script>
 </body>
 </html>
