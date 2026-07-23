@@ -1,135 +1,76 @@
-let currentQuestionIndex = 0;
-let score = 0;
-let userName = "";
+// --- ЛОГИКА ГОЛОСОВОГО ВВОДА И ЧАТА ---
 
-// Восстанавливаем имя из памяти при загрузке страницы
-window.onload = () => {
-    const savedName = localStorage.getItem('studentName');
-    if (savedName) {
-        document.getElementById('username').value = savedName;
-    }
-};
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition;
 
-const lessons = [
-    {
-        type: "iq_logic",
-        question: "Какое число будет следующим: 2, 4, 8, 16, ...?",
-        image: null,
-        options: ["24", "32", "64", "20"],
-        correctAnswer: "32",
-        explanation: "Каждое следующее число умножается на 2."
-    },
-    {
-        type: "rebus",
-        question: "Что здесь зашифровано?",
-        image: "👁️ + 🍏", 
-        options: ["Груша", "Зрение", "Яблоко", "Глазное яблоко"],
-        correctAnswer: "Глазное яблоко",
-        explanation: "Глаз + Яблоко = Глазное яблоко."
-    },
-    {
-        type: "visual_logic",
-        question: "Какая фигура здесь лишняя?",
-        image: "🔺 🔴 🟦 🟢", 
-        options: ["Красный треугольник", "Красный круг", "Синий квадрат", "Зеленый круг"],
-        correctAnswer: "Красный треугольник",
-        explanation: "У треугольника есть острые углы, а остальные фигуры скругленные." 
-    }
-];
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = 'ru-RU'; // Устанавливаем русский язык
+    recognition.continuous = false; // Останавливается, когда человек делает паузу
+    
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        // Записываем распознанный текст в поле ввода
+        document.getElementById('chat-input').value = transcript;
+        document.getElementById('mic-btn').classList.remove('recording');
+    };
+    
+    recognition.onerror = (event) => {
+        console.error("Ошибка микрофона:", event.error);
+        document.getElementById('mic-btn').classList.remove('recording');
+    };
+    
+    recognition.onend = () => {
+        document.getElementById('mic-btn').classList.remove('recording');
+    };
+}
 
-function saveNameAndStart() {
-    const nameInput = document.getElementById('username').value.trim();
-    if (nameInput === "") {
-        alert("Пожалуйста, напиши своё имя, чтобы мы могли начать! 😊");
+// Обработчик кнопки микрофона
+document.getElementById('mic-btn').addEventListener('click', () => {
+    if (!recognition) {
+        alert("Твой браузер не поддерживает голосовой ввод. Попробуй открыть сайт в Chrome или Safari!");
         return;
     }
     
-    userName = nameInput;
-    localStorage.setItem('studentName', userName); // Запоминаем имя
-
-    // Прячем приветствие, показываем уроки
-    document.getElementById('welcome-screen').classList.add('hidden');
-    document.getElementById('main-screen').classList.remove('hidden');
-    
-    // Фил обращается по имени
-    document.getElementById('greeting').innerText = `Вперёд к знаниям, ${userName}! 🚀`;
-}
-
-function goBack() {
-    // Возвращаемся на стартовый экран
-    document.getElementById('main-screen').classList.add('hidden');
-    document.getElementById('welcome-screen').classList.remove('hidden');
-}
-
-function startLesson() {
-    document.getElementById('start-btn').style.display = 'none';
-    currentQuestionIndex = 0;
-    score = 0;
-    updateScore();
-    loadQuestion();
-}
-
-function loadQuestion() {
-    const qBox = document.getElementById('question-text');
-    const imgBox = document.getElementById('image-container');
-    const optBox = document.getElementById('options-container');
-    const feedback = document.getElementById('feedback');
-    
-    feedback.className = "feedback hidden";
-    
-    if (currentQuestionIndex >= lessons.length) {
-        qBox.innerText = `Уроки завершены! Ты просто супер, ${userName}! 🏆`;
-        imgBox.innerHTML = "";
-        optBox.innerHTML = "";
-        return;
-    }
-
-    const currentLesson = lessons[currentQuestionIndex];
-    qBox.innerText = currentLesson.question;
-    
-    if (currentLesson.image) {
-        imgBox.innerHTML = `<div class="placeholder-img">${currentLesson.image}</div>`;
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn.classList.contains('recording')) {
+        recognition.stop();
+        micBtn.classList.remove('recording');
     } else {
-        imgBox.innerHTML = "";
+        recognition.start();
+        micBtn.classList.add('recording');
     }
+});
 
-    optBox.innerHTML = "";
-    currentLesson.options.forEach(option => {
-        const btn = document.createElement('button');
-        btn.className = "option-btn";
-        btn.innerText = option;
-        // Передаем ответ на проверку
-        btn.onclick = () => checkAnswer(option, currentLesson.correctAnswer, currentLesson.explanation);
-        optBox.appendChild(btn);
-    });
-}
-
-function checkAnswer(selected, correct, explanation) {
-    const feedback = document.getElementById('feedback');
-    const optBox = document.getElementById('options-container');
+// Функция отправки текста на сервер
+async function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
     
-    // Блокируем кнопки
-    Array.from(optBox.children).forEach(btn => btn.disabled = true);
-
-    if (selected === correct) {
-        score += 10;
-        updateScore();
-        // Используем имя при правильном ответе
-        feedback.innerText = `✅ Правильно, ${userName}! ${explanation}`;
-        feedback.className = "feedback success";
-    } else {
-        // Мягко поправляем
-        feedback.innerText = `❌ Не совсем так, ${userName}. Правильный ответ: ${correct}. ${explanation}`;
-        feedback.className = "feedback error";
+    const chatLog = document.getElementById('chat-log');
+    
+    // Показываем сообщение пользователя
+    chatLog.innerHTML += `<div class="msg user-msg"><strong>${userName}:</strong> ${text}</div>`;
+    input.value = "";
+    
+    // Прокручиваем чат вниз
+    chatLog.scrollTop = chatLog.scrollHeight;
+    
+    try {
+        // Отправляем запрос на наш сервер в bot.py
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, name: userName })
+        });
+        
+        const data = await response.json();
+        
+        // Показываем ответ робота
+        chatLog.innerHTML += `<div class="msg bot-msg"><strong>Фил:</strong> ${data.reply}</div>`;
+        chatLog.scrollTop = chatLog.scrollHeight;
+    } catch (e) {
+        chatLog.innerHTML += `<div class="msg error-msg">Произошла ошибка связи с сервером!</div>`;
     }
-
-    // Через 3.5 секунды следующий вопрос
-    setTimeout(() => {
-        currentQuestionIndex++;
-        loadQuestion();
-    }, 3500);
-}
-
-function updateScore() {
-    document.getElementById('score').innerText = score;
 }
