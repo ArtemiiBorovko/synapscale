@@ -14,7 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализируем клиента Groq (ключ автоматически берется из настроек Render)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
@@ -34,35 +33,35 @@ async def get_style():
 def health_check():
     return {"status": "healthy"}
 
-# Эндпоинт для умного чата с профессором Филом через Groq
 @app.post("/api/chat")
 async def chat_with_robot(request: Request):
     try:
         data = await request.json()
-        user_text = data.get("text", "").strip()
         user_name = data.get("name", "Друг")
+        chat_history = data.get("history", []) # Получаем историю диалога
         
-        if not user_text:
+        if not chat_history:
             return {"reply": "Ты ничего не написал! Попробуй еще раз."}
             
         if not groq_client:
-            return {"reply": f"Привет, {user_name}! Я профессор Фил, но у меня на сервере не настроен ключ Groq API. Добавь его в настройках Render!"}
+            return {"reply": f"Привет, {user_name}! Я профессор Фил, но у меня не настроен ключ Groq API."}
 
-        # Инструкция для ИИ: как именно должен общаться профессор Фил
+        # Базовая инструкция для Фила
         system_prompt = (
-            f"Ты — профессор Фил, добрая, умная и веселая сова-наставник, которая обучает детей. "
+            f"Ты — профессор Фил, добрая, умная и веселая сова-наставник. "
             f"Твой собеседник — ребенок по имени {user_name}. "
-            f"Отвечай коротко (1-3 предложения), тепло, поддерживающе, используя смайлики. "
-            f"Объясняй сложные вещи простыми словами, как для ребенка."
+            f"Отвечай коротко (1-3 предложения), тепло, поддерживающе. "
+            f"Объясняй сложные вещи простыми словами, как для ребенка. Задавай наводящие вопросы."
         )
 
-        # Отправляем запрос к быстрой и умной модели Llama
+        # Собираем все сообщения вместе: инструкция + история переписки
+        messages_for_ai = [{"role": "system", "content": system_prompt}]
+        for msg in chat_history:
+            messages_for_ai.append({"role": msg["role"], "content": msg["content"]})
+
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text}
-            ],
+            messages=messages_for_ai,
             temperature=0.7,
             max_tokens=300
         )
@@ -71,4 +70,4 @@ async def chat_with_robot(request: Request):
         return {"reply": reply}
 
     except Exception as e:
-        return {"reply": f"Ой, у меня в перьях что-то заискрило, ошибка связи с нейросетью: {str(e)}"}
+        return {"reply": f"Ой, ошибка связи с нейросетью: {str(e)}"}
