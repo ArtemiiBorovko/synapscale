@@ -29,7 +29,8 @@ model, example_text = torch.hub.load(
     model='silero_tts',
     language='ru',
     speaker='v4_ru',
-    trust_repo=True
+    trust_repo=True,
+    skip_validation=True
 )
 model.to(device)
 
