@@ -1,10 +1,6 @@
 import os
-import io
-import re
-import torch
-import torchaudio
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 
@@ -20,19 +16,6 @@ app.add_middleware(
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
-# Загружаем модель Silero TTS
-device = torch.device('cpu')
-torch.set_num_threads(4) # Оптимизация для CPU
-model, example_text = torch.hub.load(
-    repo_or_dir='snakers4/silero-models',
-    model='silero_tts',
-    language='ru',
-    speaker='v4_ru',
-    trust_repo=True,
-    skip_validation=True
-)
-model.to(device)
 
 @app.get("/")
 async def read_root():
@@ -82,38 +65,3 @@ async def chat_with_robot(request: Request):
 
     except Exception as e:
         return {"reply": f"Ой, ошибка связи с нейросетью: {str(e)}"}
-
-@app.post("/api/speak")
-async def generate_speech(request: Request):
-    """Эндпоинт для генерации голоса"""
-    data = await request.json()
-    text = data.get("text", "")
-    
-    # Очищаем текст от смайликов и спецсимволов Markdown, 
-    # иначе Silero выдаст ошибку
-    text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
-    text = text.replace('*', '').replace('#', '').strip()
-    
-    if not text:
-        return {"error": "Empty text"}
-        
-    sample_rate = 48000
-    speaker = 'aidar' # Отличный, теплый мужской голос
-    
-    try:
-        # Генерируем аудио-тензор
-        audio_tensor = model.apply_tts(
-            text=text,
-            speaker=speaker,
-            sample_rate=sample_rate
-        )
-        
-        # Сохраняем тензор в байтовый буфер как WAV файл
-        buffer = io.BytesIO()
-        torchaudio.save(buffer, audio_tensor.unsqueeze(0), sample_rate, format="wav")
-        buffer.seek(0)
-        
-        return StreamingResponse(buffer, media_type="audio/wav")
-    except Exception as e:
-        print(f"TTS Error: {e}")
-        return {"error": str(e)}
