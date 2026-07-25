@@ -151,7 +151,7 @@ async function sendMessage() {
         localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
         
         renderChatHistory();
-        speakText(data.reply); // Озвучиваем ответ!
+        speakText(data.reply); // Озвучиваем ответ через браузер!
         
     } catch (e) {
         const chatLog = document.getElementById('chat-log');
@@ -159,32 +159,36 @@ async function sendMessage() {
     }
 }
 
-// --- ОЗВУЧКА И МИКРОФОН ---
+// --- ОЗВУЧКА ЧЕРЕЗ БРАУЗЕР ---
 
-async function speakText(text) {
-    try {
-        // Отправляем текст на наш сервер для генерации аудио
-        const response = await fetch('/api/speak', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
-        });
-        
-        if (response.ok) {
-            // Получаем аудио как бинарные данные (Blob)
-            const blob = await response.blob();
-            // Создаем временную ссылку на аудиофайл в памяти браузера
-            const audioUrl = URL.createObjectURL(blob);
-            // Запускаем воспроизведение
-            const audio = new Audio(audioUrl);
-            audio.play();
-        } else {
-            console.error("Сервер не смог сгенерировать голос.");
+function speakText(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Останавливаем прошлую речь
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ru-RU';
+        utterance.rate = 1.0; 
+        utterance.pitch = 1.0;
+
+        // Пытаемся найти лучший русский голос в системе
+        const voices = window.speechSynthesis.getVoices();
+        const russianVoice = voices.find(voice => voice.lang.includes('ru') || voice.lang.includes('RU'));
+        if (russianVoice) {
+            utterance.voice = russianVoice;
         }
-    } catch (e) {
-        console.error("Ошибка при получении голоса:", e);
+
+        window.speechSynthesis.speak(utterance);
     }
 }
+
+// Загружаем голоса заранее (нужно для некоторых браузеров)
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+    };
+}
+
+// --- МИКРОФОН ---
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
