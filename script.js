@@ -1,9 +1,9 @@
 let currentQuestionIndex = 0;
 let score = 0;
 let userName = "";
-let chatHistory = []; // Массив для хранения памяти диалога
+let chatHistory = []; 
+let isAudioMuted = false; // Звук по умолчанию включен
 
-// Восстанавливаем имя из памяти при загрузке страницы
 window.onload = () => {
     const savedName = localStorage.getItem('studentName');
     if (savedName) {
@@ -27,7 +27,6 @@ function saveNameAndStart() {
     userName = nameInput;
     localStorage.setItem('studentName', userName);
 
-    // Загружаем историю чата именно для этого пользователя
     chatHistory = JSON.parse(localStorage.getItem('chatHistory_' + userName)) || [];
     renderChatHistory();
 
@@ -129,7 +128,6 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
     
-    // Добавляем сообщение пользователя в историю
     chatHistory.push({ role: "user", content: text });
     localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
     
@@ -137,7 +135,6 @@ async function sendMessage() {
     input.value = "";
     
     try {
-        // Отправляем на сервер ВСЮ историю, чтобы ИИ помнил контекст
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -146,12 +143,11 @@ async function sendMessage() {
         
         const data = await response.json();
         
-        // Добавляем ответ бота в историю
         chatHistory.push({ role: "assistant", content: data.reply });
         localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
         
         renderChatHistory();
-        speakText(data.reply); // Озвучиваем ответ через браузер!
+        speakText(data.reply); 
         
     } catch (e) {
         const chatLog = document.getElementById('chat-log');
@@ -159,18 +155,35 @@ async function sendMessage() {
     }
 }
 
-// --- ОЗВУЧКА ЧЕРЕЗ БРАУЗЕР ---
+// --- УПРАВЛЕНИЕ ЗВУКОМ И ОЗВУЧКА ---
+
+function toggleAudio() {
+    isAudioMuted = !isAudioMuted;
+    const muteBtn = document.getElementById('mute-btn');
+    
+    if (isAudioMuted) {
+        muteBtn.innerText = "🔇 Звук выкл";
+        muteBtn.classList.add('muted');
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+    } else {
+        muteBtn.innerText = "🔊 Звук вкл";
+        muteBtn.classList.remove('muted');
+    }
+}
 
 function speakText(text) {
+    if (isAudioMuted) return; // Если выключено — молчим
+    
     if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Останавливаем прошлую речь
+        window.speechSynthesis.cancel(); 
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ru-RU';
         utterance.rate = 1.0; 
         utterance.pitch = 1.0;
 
-        // Пытаемся найти лучший русский голос в системе
         const voices = window.speechSynthesis.getVoices();
         const russianVoice = voices.find(voice => voice.lang.includes('ru') || voice.lang.includes('RU'));
         if (russianVoice) {
@@ -181,7 +194,6 @@ function speakText(text) {
     }
 }
 
-// Загружаем голоса заранее (нужно для некоторых браузеров)
 if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
         window.speechSynthesis.getVoices();
@@ -202,7 +214,7 @@ if (SpeechRecognition) {
         const transcript = event.results[0][0].transcript;
         document.getElementById('chat-input').value = transcript;
         document.getElementById('mic-btn').classList.remove('recording');
-        sendMessage(); // Автоматически отправляем после диктовки
+        sendMessage(); 
     };
     
     recognition.onerror = () => document.getElementById('mic-btn').classList.remove('recording');

@@ -39,9 +39,12 @@
                 <div id="feedback" class="feedback hidden"></div>
             </main>
 
-            <!-- БЛОК ЧАТА С МИКРОФОНОМ -->
+            <!-- БЛОК ЧАТА С МИКРОФОНОМ И КНОПКОЙ ЗВУКА -->
             <div id="chat-section" class="card">
-                <h3>💬 Спроси профессора Фила</h3>
+                <div class="chat-header-row">
+                    <h3>💬 Спроси профессора Фила</h3>
+                    <button id="mute-btn" onclick="toggleAudio()" title="Включить/выключить звук">🔊 Звук вкл</button>
+                </div>
                 <div id="chat-log"></div>
                 <div class="chat-controls">
                     <button id="mic-btn" class="mic-btn" title="Нажми и говори">🎤</button>
