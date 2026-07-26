@@ -257,3 +257,35 @@ h1 {
     70% { box-shadow: 0 0 0 15px rgba(255, 107, 107, 0); }
     100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
 }
+/* Стили для строки ответа бота с кнопкой повтора */
+.bot-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.repeat-btn {
+    background-color: #ffe66d;
+    color: #333;
+    border: 2px solid #f4d03f;
+    padding: 6px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-family: inherit;
+    font-weight: bold;
+    transition: all 0.2s;
+    box-shadow: 0 3px 0 #d4ac0d;
+}
+
+.repeat-btn:hover {
+    background-color: #f9e79f;
+    transform: translateY(-1px);
+}
+
+.repeat-btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #d4ac0d;
+}

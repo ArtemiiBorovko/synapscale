@@ -2,7 +2,8 @@ let currentQuestionIndex = 0;
 let score = 0;
 let userName = "";
 let chatHistory = []; 
-let isAudioMuted = false; // Звук по умолчанию включен
+let isAudioMuted = false;
+let lastBotText = ""; // Здесь будем хранить текст последнего ответа бота
 
 window.onload = () => {
     const savedName = localStorage.getItem('studentName');
@@ -113,11 +114,22 @@ function updateScore() {
 function renderChatHistory() {
     const chatLog = document.getElementById('chat-log');
     chatLog.innerHTML = "";
-    chatHistory.forEach(msg => {
+    
+    chatHistory.forEach((msg, index) => {
         if (msg.role === "user") {
             chatLog.innerHTML += `<div class="msg user-msg"><strong>${userName}:</strong> ${msg.content}</div>`;
         } else {
-            chatLog.innerHTML += `<div class="msg bot-msg"><strong>Фил:</strong> ${msg.content}</div>`;
+            // Проверяем, является ли это сообщение последним от ассистента, чтобы добавить кнопку повтора именно к нему
+            const isLastBotMsg = (index === chatHistory.length - 1);
+            if (isLastBotMsg) {
+                lastBotText = msg.content;
+            }
+            
+            chatLog.innerHTML += `
+                <div class="msg-row bot-row">
+                    <div class="msg bot-msg"><strong>Фил:</strong> ${msg.content}</div>
+                    ${isLastBotMsg ? '<button class="repeat-btn" onclick="repeatLastMessage()" title="Повторить голосом">🔊 Повторить</button>' : ''}
+                </div>`;
         }
     });
     chatLog.scrollTop = chatLog.scrollHeight;
@@ -144,6 +156,7 @@ async function sendMessage() {
         const data = await response.json();
         
         chatHistory.push({ role: "assistant", content: data.reply });
+        lastBotText = data.reply; // Сохраняем текст для повтора
         localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
         
         renderChatHistory();
@@ -155,7 +168,7 @@ async function sendMessage() {
     }
 }
 
-// --- УПРАВЛЕНИЕ ЗВУКОМ И ОЗВУЧКА ---
+// --- УПРАВЛЕНИЕ ЗВУКОМ И ПОВТОР ---
 
 function toggleAudio() {
     isAudioMuted = !isAudioMuted;
@@ -174,7 +187,7 @@ function toggleAudio() {
 }
 
 function speakText(text) {
-    if (isAudioMuted) return; // Если выключено — молчим
+    if (isAudioMuted) return; 
     
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel(); 
@@ -191,6 +204,13 @@ function speakText(text) {
         }
 
         window.speechSynthesis.speak(utterance);
+    }
+}
+
+// Функция по клику на кнопку повтора — говорит столько раз, сколько нажмут
+function repeatLastMessage() {
+    if (lastBotText) {
+        speakText(lastBotText);
     }
 }
 
