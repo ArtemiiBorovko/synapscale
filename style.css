@@ -266,18 +266,22 @@ h1 {
     flex-wrap: wrap;
 }
 
+/* Кнопка повтора прямо в сообщении Фила */
 .repeat-btn {
     background-color: #ffe66d;
     color: #333;
     border: 2px solid #f4d03f;
-    padding: 6px 12px;
-    border-radius: 10px;
+    padding: 4px 10px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.9em;
+    font-size: 0.85em;
     font-family: inherit;
     font-weight: bold;
+    margin-left: 8px;
+    display: inline-block;
     transition: all 0.2s;
-    box-shadow: 0 3px 0 #d4ac0d;
+    box-shadow: 0 2px 0 #d4ac0d;
+    vertical-align: middle;
 }
 
 .repeat-btn:hover {
@@ -287,5 +291,5 @@ h1 {
 
 .repeat-btn:active {
     transform: translateY(2px);
-    box-shadow: 0 1px 0 #d4ac0d;
+    box-shadow: 0 0 0 #d4ac0d;
 }

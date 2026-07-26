@@ -3,7 +3,7 @@ let score = 0;
 let userName = "";
 let chatHistory = []; 
 let isAudioMuted = false;
-let lastBotText = ""; // Здесь будем хранить текст последнего ответа бота
+let lastBotText = "";
 
 window.onload = () => {
     const savedName = localStorage.getItem('studentName');
@@ -119,16 +119,18 @@ function renderChatHistory() {
         if (msg.role === "user") {
             chatLog.innerHTML += `<div class="msg user-msg"><strong>${userName}:</strong> ${msg.content}</div>`;
         } else {
-            // Проверяем, является ли это сообщение последним от ассистента, чтобы добавить кнопку повтора именно к нему
             const isLastBotMsg = (index === chatHistory.length - 1);
             if (isLastBotMsg) {
                 lastBotText = msg.content;
             }
             
+            // Добавляем кнопку прямо внутрь контейнера сообщения Фила
+            let repeatButtonHtml = isLastBotMsg ? ` <button class="repeat-btn" onclick="repeatLastMessage()">🔊 Повторить</button>` : '';
+            
             chatLog.innerHTML += `
-                <div class="msg-row bot-row">
-                    <div class="msg bot-msg"><strong>Фил:</strong> ${msg.content}</div>
-                    ${isLastBotMsg ? '<button class="repeat-btn" onclick="repeatLastMessage()" title="Повторить голосом">🔊 Повторить</button>' : ''}
+                <div class="msg bot-msg">
+                    <strong>Фил:</strong> ${msg.content}
+                    ${repeatButtonHtml}
                 </div>`;
         }
     });
@@ -156,7 +158,7 @@ async function sendMessage() {
         const data = await response.json();
         
         chatHistory.push({ role: "assistant", content: data.reply });
-        lastBotText = data.reply; // Сохраняем текст для повтора
+        lastBotText = data.reply;
         localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
         
         renderChatHistory();
@@ -207,7 +209,6 @@ function speakText(text) {
     }
 }
 
-// Функция по клику на кнопку повтора — говорит столько раз, сколько нажмут
 function repeatLastMessage() {
     if (lastBotText) {
         speakText(lastBotText);
