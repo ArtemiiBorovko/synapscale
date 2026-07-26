@@ -198,7 +198,17 @@ h1 {
 
 .msg { margin-bottom: 8px; line-height: 1.4; }
 .user-msg { color: #333; }
-.bot-msg { color: #2b7a78; background: #e0f2f1; padding: 8px; border-radius: 8px; display: inline-block; }
+.bot-msg { 
+    color: #2b7a78; 
+    background: #e0f2f1; 
+    padding: 8px 12px; 
+    border-radius: 8px; 
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
 .error-msg { color: red; font-size: 0.9em; }
 
 .chat-controls {
