@@ -230,36 +230,50 @@ if ('speechSynthesis' in window) {
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
+let isUserStopped = false; // Флаг, чтобы отличать ручную остановку от паузы браузера
 
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.lang = 'ru-RU';
-    recognition.continuous = true;     // Не выключается автоматически от пауз
-    recognition.interimResults = true; // Показывает текст прямо по ходу речи
+    recognition.continuous = true;
+    recognition.interimResults = true;
     
     recognition.onresult = (event) => {
+        let interimTranscript = '';
         let finalTranscript = '';
+        
         for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
             }
         }
+        
+        const currentInput = document.getElementById('chat-input');
         if (finalTranscript) {
-            document.getElementById('chat-input').value = finalTranscript;
+            currentInput.value += (currentInput.value ? " " : "") + finalTranscript;
         }
     };
     
-    recognition.onerror = () => {
-        document.getElementById('mic-btn').classList.remove('recording');
+    recognition.onerror = (event) => {
+        console.log("Ошибка распознавания:", event.error);
     };
     
     recognition.onend = () => {
-        document.getElementById('mic-btn').classList.remove('recording');
-        // Как только запись остановилась (повторный клик), автоматически отправляем текст
-        const inputVal = document.getElementById('chat-input').value.trim();
-        if (inputVal) {
-            sendMessage();
+        // Если браузер попытался сам вырубить запись, а пользователь ее не останавливал — запускаем заново!
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn.classList.contains('recording') && !isUserStopped) {
+            try {
+                recognition.start();
+                return;
+            } catch (e) {
+                console.log("Перезапуск микрофона:", e);
+            }
         }
+        
+        micBtn.classList.remove('recording');
+        isUserStopped = false;
     };
 }
 
@@ -271,10 +285,26 @@ document.getElementById('mic-btn').addEventListener('click', () => {
     
     const micBtn = document.getElementById('mic-btn');
     if (micBtn.classList.contains('recording')) {
-        recognition.stop(); // Останавливаем вручную, сработает onend и текст уйдет
+        isUserStopped = true; // Указываем, что это ручная остановка
+        recognition.stop();
+        micBtn.classList.remove('recording');
+        
+        // Отправляем текст, если он есть
+        setTimeout(() => {
+            const inputVal = document.getElementById('chat-input').value.trim();
+            if (inputVal) {
+                sendMessage();
+            }
+        }, 200);
     } else {
-        document.getElementById('chat-input').value = ""; // Очищаем поле перед новой записью
-        recognition.start();
-        micBtn.classList.add('recording');
+        isUserStopped = false;
+        document.жgetElementById ? document.getElementById('chat-input').value = "" : null;
+        document.getElementById('chat-input').value = "";
+        try {
+            recognition.start();
+            micBtn.classList.add('recording');
+        } catch (e) {
+            console.log("Ошибка запуска:", e);
+        }
     }
 });
