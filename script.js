@@ -228,9 +228,11 @@ if ('speechSynthesis' in window) {
 
 // --- МИКРОФОН (Непрерывный режим до повторного нажатия) ---
 
+// --- МИКРОФОН (Режим рации: пишем всё в буфер до повторного нажатия) ---
+
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
-let isUserStopped = false; // Флаг, чтобы отличать ручную остановку от паузы браузера
+let fullSpeechBuffer = ""; // Накопительный буфер для всей речи
 
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
@@ -239,21 +241,17 @@ if (SpeechRecognition) {
     recognition.interimResults = true;
     
     recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        
+        let interimText = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                fullSpeechBuffer += " " + transcript;
             } else {
-                interimTranscript += event.results[i][0].transcript;
+                interimText += transcript;
             }
         }
-        
-        const currentInput = document.getElementById('chat-input');
-        if (finalTranscript) {
-            currentInput.value += (currentInput.value ? " " : "") + finalTranscript;
-        }
+        // Показываем в инпуте то, что уже точно сказано + текущие промежуточные слова
+        document.getElementById('chat-input').value = (fullSpeechBuffer + " " + interimText).trim();
     };
     
     recognition.onerror = (event) => {
@@ -261,9 +259,9 @@ if (SpeechRecognition) {
     };
     
     recognition.onend = () => {
-        // Если браузер попытался сам вырубить запись, а пользователь ее не останавливал — запускаем заново!
         const micBtn = document.getElementById('mic-btn');
-        if (micBtn.classList.contains('recording') && !isUserStopped) {
+        // Если браузер сам попытался выключить запись (из-за паузы), а пользователь её не завершал — тут же возобновляем сессию!
+        if (micBtn.classList.contains('recording')) {
             try {
                 recognition.start();
                 return;
@@ -271,9 +269,6 @@ if (SpeechRecognition) {
                 console.log("Перезапуск микрофона:", e);
             }
         }
-        
-        micBtn.classList.remove('recording');
-        isUserStopped = false;
     };
 }
 
@@ -284,22 +279,28 @@ document.getElementById('mic-btn').addEventListener('click', () => {
     }
     
     const micBtn = document.getElementById('mic-btn');
+    const inputField = document.getElementById('chat-input');
+    
     if (micBtn.classList.contains('recording')) {
-        isUserStopped = true; // Указываем, что это ручная остановка
-        recognition.stop();
+        // ВТОРОЙ КЛИК: Пользователь закончил говорить и останавливает запись
         micBtn.classList.remove('recording');
+        try {
+            recognition.stop();
+        } catch (e) {}
         
-        // Отправляем текст, если он есть
+        // Фиксируем итоговый текст из буфера и отправляем
         setTimeout(() => {
-            const inputVal = document.getElementById('chat-input').value.trim();
-            if (inputVal) {
+            const finalVal = inputField.value.trim();
+            if (finalVal) {
                 sendMessage();
             }
-        }, 200);
+            fullSpeechBuffer = ""; // Очищаем буфер для следующего раза
+        }, 100);
+        
     } else {
-        isUserStopped = false;
-        document.жgetElementById ? document.getElementById('chat-input').value = "" : null;
-        document.getElementById('chat-input').value = "";
+        // ПЕРВЫЙ КЛИК: Начинаем запись с чистого листа
+        fullSpeechBuffer = "";
+        inputField.value = "";
         try {
             recognition.start();
             micBtn.classList.add('recording');
