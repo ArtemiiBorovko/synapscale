@@ -137,15 +137,19 @@ function renderChatHistory() {
 }
 
 async function sendMessage() {
-    // Если идет запись голоса при нажатии "Отправить", принудительно останавливаем микрофон
-    if (recognition && document.getElementById('mic-btn').classList.contains('recording')) {
-        recognition.stop();
-        return; // onresult подхватит и отправит текст
+    const micBtn = document.getElementById('mic-btn');
+    
+    // Если при нажатии "Отправить" микрофон всё ещё пишет, корректно его выключаем
+    if (recognition && micBtn.classList.contains('recording')) {
+        micBtn.classList.remove('recording');
+        try { recognition.stop(); } catch(e) {}
     }
 
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
+    
+    fullSpeechBuffer = ""; // Очищаем буфер рации
     
     chatHistory.push({ role: "user", content: text });
     localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
