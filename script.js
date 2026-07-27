@@ -124,7 +124,6 @@ function renderChatHistory() {
                 lastBotText = msg.content;
             }
             
-            // Добавляем кнопку прямо внутрь контейнера сообщения Фила
             let repeatButtonHtml = isLastBotMsg ? ` <button class="repeat-btn" onclick="repeatLastMessage()">🔊 Повторить</button>` : '';
             
             chatLog.innerHTML += `
@@ -138,6 +137,12 @@ function renderChatHistory() {
 }
 
 async function sendMessage() {
+    // Если идет запись голоса при нажатии "Отправить", принудительно останавливаем микрофон
+    if (recognition && document.getElementById('mic-btn').classList.contains('recording')) {
+        recognition.stop();
+        return; // onresult подхватит и отправит текст
+    }
+
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
@@ -221,7 +226,7 @@ if ('speechSynthesis' in window) {
     };
 }
 
-// --- МИКРОФОН ---
+// --- МИКРОФОН (Непрерывный режим до повторного нажатия) ---
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
@@ -229,17 +234,33 @@ let recognition;
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     recognition.lang = 'ru-RU';
-    recognition.continuous = false;
+    recognition.continuous = true;     // Не выключается автоматически от пауз
+    recognition.interimResults = true; // Показывает текст прямо по ходу речи
     
     recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        document.getElementById('chat-input').value = transcript;
-        document.getElementById('mic-btn').classList.remove('recording');
-        sendMessage(); 
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            }
+        }
+        if (finalTranscript) {
+            document.getElementById('chat-input').value = finalTranscript;
+        }
     };
     
-    recognition.onerror = () => document.getElementById('mic-btn').classList.remove('recording');
-    recognition.onend = () => document.getElementById('mic-btn').classList.remove('recording');
+    recognition.onerror = () => {
+        document.getElementById('mic-btn').classList.remove('recording');
+    };
+    
+    recognition.onend = () => {
+        document.getElementById('mic-btn').classList.remove('recording');
+        // Как только запись остановилась (повторный клик), автоматически отправляем текст
+        const inputVal = document.getElementById('chat-input').value.trim();
+        if (inputVal) {
+            sendMessage();
+        }
+    };
 }
 
 document.getElementById('mic-btn').addEventListener('click', () => {
@@ -250,8 +271,9 @@ document.getElementById('mic-btn').addEventListener('click', () => {
     
     const micBtn = document.getElementById('mic-btn');
     if (micBtn.classList.contains('recording')) {
-        recognition.stop();
+        recognition.stop(); // Останавливаем вручную, сработает onend и текст уйдет
     } else {
+        document.getElementById('chat-input').value = ""; // Очищаем поле перед новой записью
         recognition.start();
         micBtn.classList.add('recording');
     }
