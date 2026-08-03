@@ -86,23 +86,31 @@ function loadQuestion() {
 function checkAnswer(selected, correct, explanation) {
     const feedback = document.getElementById('feedback');
     const optBox = document.getElementById('options-container');
-    
+    const nextBtn = document.getElementById('next-btn'); // Находим новую кнопку
+
+    // Блокируем кнопки после ответа[cite: 9]
     Array.from(optBox.children).forEach(btn => btn.disabled = true);
 
     if (selected === correct) {
-        score += 10;
-        updateScore();
-        feedback.innerText = `✅ Правильно! ${explanation}`;
-        feedback.className = "feedback success";
+        score += 1; // Начисляем 1 очко вместо 10[cite: 9]
+        updateScore(); //[cite: 9]
+        feedback.innerText = `✅ Правильно! ${explanation}`; //[cite: 9]
+        feedback.className = "feedback success"; //[cite: 9]
     } else {
-        feedback.innerText = `❌ Не совсем так. Правильный ответ: ${correct}. ${explanation}`;
-        feedback.className = "feedback error";
+        feedback.innerText = `❌ Не совсем так. Правильный ответ: ${correct}. ${explanation}`; //[cite: 9]
+        feedback.className = "feedback error"; //[cite: 9]
     }
 
-    setTimeout(() => {
-        currentQuestionIndex++;
-        loadQuestion();
-    }, 3500);
+    feedback.classList.remove('hidden');
+    nextBtn.classList.remove('hidden'); // Показываем кнопку перехода
+    // setTimeout убран — теперь ждем нажатия кнопки[cite: 9]
+}
+
+// Новая функция для перелистывания
+function nextQuestion() {
+    document.getElementById('next-btn').classList.add('hidden');
+    currentQuestionIndex++;
+    loadQuestion();
 }
 
 function updateScore() {
