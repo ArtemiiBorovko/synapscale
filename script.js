@@ -1,4 +1,4 @@
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = "";
 
 let currentUserName = "";
 let currentQuestionData = null;
@@ -25,6 +25,13 @@ const chatInput = document.getElementById("chat-input");
 const sendBtn = document.getElementById("send-btn");
 const voiceBtn = document.getElementById("voice-btn");
 
+window.onload = () => {
+    const savedName = localStorage.getItem('studentName');
+    if (savedName) {
+        userNameInput.value = savedName;
+    }
+};
+
 // Инициализация темы
 function initTheme() {
     const savedTheme = localStorage.getItem("theme") || "dark";
@@ -45,6 +52,7 @@ startBtn.addEventListener("click", () => {
     const name = userNameInput.value.trim();
     if (name) {
         currentUserName = name;
+        localStorage.setItem('studentName', name); // Возвращаем сохранение
         displayName.textContent = name;
         welcomeScreen.classList.add("hidden");
         appScreen.classList.remove("hidden");
