@@ -1,9 +1,9 @@
-let currentQuestionIndex = 0;
 let score = 0;
 let userName = "";
 let chatHistory = []; 
 let isAudioMuted = false;
 let lastBotText = "";
+let currentTopic = "";
 
 window.onload = () => {
     const savedName = localStorage.getItem('studentName');
@@ -11,12 +11,6 @@ window.onload = () => {
         document.getElementById('username').value = savedName;
     }
 };
-
-const lessons = [
-    { type: "iq_logic", question: "Какое число будет следующим: 2, 4, 8, 16, ...?", image: null, options: ["24", "32", "64", "20"], correctAnswer: "32", explanation: "Каждое следующее число умножается на 2." },
-    { type: "rebus", question: "Что здесь зашифровано?", image: "👁️ + 🍏", options: ["Груша", "Зрение", "Яблоко", "Глазное яблоко"], correctAnswer: "Глазное яблоко", explanation: "Глаз + Яблоко = Глазное яблоко." },
-    { type: "visual_logic", question: "Какая фигура здесь лишняя?", image: "🔺 🔴 🟦 🟢", options: ["Красный треугольник", "Красный круг", "Синий квадрат", "Зеленый круг"], correctAnswer: "Красный треугольник", explanation: "У треугольника есть острые углы, а остальные фигуры скругленные." }
-];
 
 function saveNameAndStart() {
     const nameInput = document.getElementById('username').value.trim();
@@ -43,81 +37,103 @@ function goBack() {
 
 function startLesson() {
     document.getElementById('start-btn').style.display = 'none';
-    currentQuestionIndex = 0;
-    score = 0;
-    updateScore();
-    loadQuestion();
+    loadQuestionFromAI();
 }
 
-function loadQuestion() {
+// Загрузка живого вопроса из ИИ + Neon DB
+async function loadQuestionFromAI() {
     const qBox = document.getElementById('question-text');
-    const imgBox = document.getElementById('image-container');
     const optBox = document.getElementById('options-container');
     const feedback = document.getElementById('feedback');
-    
+    const nextBtn = document.getElementById('next-btn');
+
     feedback.className = "feedback hidden";
+    nextBtn.classList.add('hidden');
     
-    if (currentQuestionIndex >= lessons.length) {
-        qBox.innerText = `Уроки завершены! Ты просто супер, ${userName}! 🏆`;
-        imgBox.innerHTML = "";
-        optBox.innerHTML = "";
-        return;
-    }
-
-    const currentLesson = lessons[currentQuestionIndex];
-    qBox.innerText = currentLesson.question;
-    
-    if (currentLesson.image) {
-        imgBox.innerHTML = `<div class="placeholder-img">${currentLesson.image}</div>`;
-    } else {
-        imgBox.innerHTML = "";
-    }
-
+    qBox.innerText = "🦉 Профессор Фил придумывает вопрос...";
     optBox.innerHTML = "";
-    currentLesson.options.forEach(option => {
-        const btn = document.createElement('button');
-        btn.className = "option-btn";
-        btn.innerText = option;
-        btn.onclick = () => checkAnswer(option, currentLesson.correctAnswer, currentLesson.explanation);
-        optBox.appendChild(btn);
-    });
+
+    try {
+        const response = await fetch('/api/get-question', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: userName })
+        });
+        
+        const data = await response.json();
+        
+        // Обновляем очки из базы данных
+        score = data.user_score;
+        updateScore();
+        
+        currentTopic = data.topic;
+        qBox.innerText = `[${data.topic}] ${data.question}`;
+        
+        optBox.innerHTML = "";
+        data.options.forEach(option => {
+            const btn = document.createElement('button');
+            btn.className = "option-btn";
+            btn.innerText = option;
+            btn.onclick = () => checkAnswer(option, data.correctAnswer, data.explanation);
+            optBox.appendChild(btn);
+        });
+
+    } catch (e) {
+        qBox.innerText = "Не удалось загрузить вопрос. Проверь подключение к серверу.";
+    }
 }
 
-function checkAnswer(selected, correct, explanation) {
+async function checkAnswer(selected, correct, explanation) {
     const feedback = document.getElementById('feedback');
     const optBox = document.getElementById('options-container');
-    const nextBtn = document.getElementById('next-btn'); // Находим новую кнопку
+    const nextBtn = document.getElementById('next-btn');
 
-    // Блокируем кнопки после ответа[cite: 9]
+    const isCorrect = (selected === correct);
+
+    // Блокируем кнопки после ответа
     Array.from(optBox.children).forEach(btn => btn.disabled = true);
 
-    if (selected === correct) {
-        score += 1; // Начисляем 1 очко вместо 10[cite: 9]
-        updateScore(); //[cite: 9]
-        feedback.innerText = `✅ Правильно! ${explanation}`; //[cite: 9]
-        feedback.className = "feedback success"; //[cite: 9]
+    if (isCorrect) {
+        feedback.innerText = `✅ Правильно! ${explanation}`;
+        feedback.className = "feedback success";
     } else {
-        feedback.innerText = `❌ Не совсем так. Правильный ответ: ${correct}. ${explanation}`; //[cite: 9]
-        feedback.className = "feedback error"; //[cite: 9]
+        feedback.innerText = `❌ Не совсем так. Правильный ответ: ${correct}. ${explanation}`;
+        feedback.className = "feedback error";
     }
 
     feedback.classList.remove('hidden');
-    nextBtn.classList.remove('hidden'); // Показываем кнопку перехода
-    // setTimeout убран — теперь ждем нажатия кнопки[cite: 9]
+    nextBtn.classList.remove('hidden');
+
+    // Отправляем результат в Neon DB
+    try {
+        const response = await fetch('/api/submit-answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: userName,
+                is_correct: isCorrect,
+                topic: currentTopic
+            })
+        });
+        const resData = await response.json();
+        if (resData.status === "ok") {
+            score = resData.score;
+            updateScore();
+        }
+    } catch(e) {
+        console.log("Ошибка сохранения результата:", e);
+    }
 }
 
-// Новая функция для перелистывания
 function nextQuestion() {
-    document.getElementById('next-btn').classList.add('hidden');
-    currentQuestionIndex++;
-    loadQuestion();
+    loadQuestionFromAI();
 }
 
 function updateScore() {
     document.getElementById('score').innerText = score;
 }
 
-// --- ЧАТ И ПАМЯТЬ ---
+// --- ЧАТ И ГОЛОСОВОЙ ВВОД ---
 
 function renderChatHistory() {
     const chatLog = document.getElementById('chat-log');
@@ -128,9 +144,7 @@ function renderChatHistory() {
             chatLog.innerHTML += `<div class="msg user-msg"><strong>${userName}:</strong> ${msg.content}</div>`;
         } else {
             const isLastBotMsg = (index === chatHistory.length - 1);
-            if (isLastBotMsg) {
-                lastBotText = msg.content;
-            }
+            if (isLastBotMsg) lastBotText = msg.content;
             
             let repeatButtonHtml = isLastBotMsg ? ` <button class="repeat-btn" onclick="repeatLastMessage()">🔊 Повторить</button>` : '';
             
@@ -146,8 +160,6 @@ function renderChatHistory() {
 
 async function sendMessage() {
     const micBtn = document.getElementById('mic-btn');
-    
-    // Если при нажатии "Отправить" микрофон всё ещё пишет, корректно его выключаем
     if (recognition && micBtn.classList.contains('recording')) {
         micBtn.classList.remove('recording');
         try { recognition.stop(); } catch(e) {}
@@ -157,7 +169,7 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
     
-    fullSpeechBuffer = ""; // Очищаем буфер рации
+    fullSpeechBuffer = "";
     
     chatHistory.push({ role: "user", content: text });
     localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
@@ -187,18 +199,13 @@ async function sendMessage() {
     }
 }
 
-// --- УПРАВЛЕНИЕ ЗВУКОМ И ПОВТОР ---
-
 function toggleAudio() {
     isAudioMuted = !isAudioMuted;
     const muteBtn = document.getElementById('mute-btn');
-    
     if (isAudioMuted) {
         muteBtn.innerText = "🔇 Звук выкл";
         muteBtn.classList.add('muted');
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-        }
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     } else {
         muteBtn.innerText = "🔊 Звук вкл";
         muteBtn.classList.remove('muted');
@@ -207,44 +214,26 @@ function toggleAudio() {
 
 function speakText(text) {
     if (isAudioMuted) return; 
-    
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel(); 
-
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ru-RU';
         utterance.rate = 1.0; 
-        utterance.pitch = 1.0;
-
         const voices = window.speechSynthesis.getVoices();
         const russianVoice = voices.find(voice => voice.lang.includes('ru') || voice.lang.includes('RU'));
-        if (russianVoice) {
-            utterance.voice = russianVoice;
-        }
-
+        if (russianVoice) utterance.voice = russianVoice;
         window.speechSynthesis.speak(utterance);
     }
 }
 
 function repeatLastMessage() {
-    if (lastBotText) {
-        speakText(lastBotText);
-    }
+    if (lastBotText) speakText(lastBotText);
 }
 
-if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-    };
-}
-
-// --- МИКРОФОН (Непрерывный режим до повторного нажатия) ---
-
-// --- МИКРОФОН (Режим рации: пишем всё в буфер до повторного нажатия) ---
-
+// Микрофон
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
-let fullSpeechBuffer = ""; // Накопительный буфер для всей речи
+let fullSpeechBuffer = "";
 
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
@@ -262,62 +251,38 @@ if (SpeechRecognition) {
                 interimText += transcript;
             }
         }
-        // Показываем в инпуте то, что уже точно сказано + текущие промежуточные слова
         document.getElementById('chat-input').value = (fullSpeechBuffer + " " + interimText).trim();
     };
-    
-    recognition.onerror = (event) => {
-        console.log("Ошибка распознавания:", event.error);
-    };
-    
+
     recognition.onend = () => {
         const micBtn = document.getElementById('mic-btn');
-        // Если браузер сам попытался выключить запись (из-за паузы), а пользователь её не завершал — тут же возобновляем сессию!
         if (micBtn.classList.contains('recording')) {
-            try {
-                recognition.start();
-                return;
-            } catch (e) {
-                console.log("Перезапуск микрофона:", e);
-            }
+            try { recognition.start(); } catch (e) {}
         }
     };
 }
 
 document.getElementById('mic-btn').addEventListener('click', () => {
     if (!recognition) {
-        alert("Твой браузер не поддерживает голосовой ввод. Попробуй открыть сайт в Google Chrome!");
+        alert("Твой браузер не поддерживает голосовой ввод. Попробуй Chrome!");
         return;
     }
-    
     const micBtn = document.getElementById('mic-btn');
     const inputField = document.getElementById('chat-input');
     
     if (micBtn.classList.contains('recording')) {
-        // ВТОРОЙ КЛИК: Пользователь закончил говорить и останавливает запись
         micBtn.classList.remove('recording');
-        try {
-            recognition.stop();
-        } catch (e) {}
-        
-        // Фиксируем итоговый текст из буфера и отправляем
+        try { recognition.stop(); } catch (e) {}
         setTimeout(() => {
-            const finalVal = inputField.value.trim();
-            if (finalVal) {
-                sendMessage();
-            }
-            fullSpeechBuffer = ""; // Очищаем буфер для следующего раза
+            if (inputField.value.trim()) sendMessage();
+            fullSpeechBuffer = "";
         }, 100);
-        
     } else {
-        // ПЕРВЫЙ КЛИК: Начинаем запись с чистого листа
         fullSpeechBuffer = "";
         inputField.value = "";
         try {
             recognition.start();
             micBtn.classList.add('recording');
-        } catch (e) {
-            console.log("Ошибка запуска:", e);
-        }
+        } catch (e) {}
     }
 });
