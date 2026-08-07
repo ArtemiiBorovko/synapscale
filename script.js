@@ -1,308 +1,227 @@
-let score = 0;
-let userName = "";
-let chatHistory = []; 
-let isAudioMuted = false;
-let lastBotText = "";
-let currentTopic = "";
-let currentSubcategory = "";
-let currentQuestionIndex = 0; 
-const MAX_QUESTIONS_PER_BLOCK = 10;
+const BACKEND_URL = "http://127.0.0.1:8000";
 
-window.onload = () => {
-    const savedName = localStorage.getItem('studentName');
-    if (savedName) {
-        document.getElementById('username').value = savedName;
-    }
-};
+let currentUserName = "";
+let currentQuestionData = null;
+let chatHistory = [];
 
-function saveNameAndStart() {
-    const nameInput = document.getElementById('username').value.trim();
-    if (nameInput === "") {
-        alert("Пожалуйста, напиши своё имя, чтобы мы могли начать! 😊");
-        return;
-    }
-    
-    userName = nameInput;
-    localStorage.setItem('studentName', userName);
+// DOM Элементы
+const welcomeScreen = document.getElementById("welcome-screen");
+const appScreen = document.getElementById("app-screen");
+const userNameInput = document.getElementById("user-name");
+const startBtn = document.getElementById("start-btn");
+const displayName = document.getElementById("display-name");
+const scoreDisplay = document.getElementById("score");
+const themeToggle = document.getElementById("theme-toggle");
 
-    chatHistory = JSON.parse(localStorage.getItem('chatHistory_' + userName)) || [];
-    renderChatHistory();
+const questionTopic = document.getElementById("question-topic");
+const questionText = document.getElementById("question-text");
+const optionsContainer = document.getElementById("options-container");
+const feedbackContainer = document.getElementById("feedback-container");
+const nextBtn = document.getElementById("next-btn");
+const speakQuestionBtn = document.getElementById("speak-question-btn");
 
-    document.getElementById('welcome-screen').classList.add('hidden');
-    document.getElementById('main-screen').classList.remove('hidden');
-    document.getElementById('greeting').innerText = `Вперёд к знаниям, ${userName}! 🚀`;
+const chatHistoryDiv = document.getElementById("chat-history");
+const chatInput = document.getElementById("chat-input");
+const sendBtn = document.getElementById("send-btn");
+const voiceBtn = document.getElementById("voice-btn");
+
+// Инициализация темы
+function initTheme() {
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    document.documentElement.setAttribute("data-theme", savedTheme);
 }
 
-function goBack() {
-    document.getElementById('main-screen').classList.add('hidden');
-    document.getElementById('welcome-screen').classList.remove('hidden');
-}
+themeToggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.getAttribute("data-theme");
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("theme", newTheme);
+});
 
-function startLesson() {
-    document.getElementById('start-btn').style.display = 'none';
-    currentQuestionIndex = 0;
-    loadQuestionFromAI();
-}
+initTheme();
 
-async function loadQuestionFromAI() {
-    const qBox = document.getElementById('question-text');
-    const optBox = document.getElementById('options-container');
-    const feedback = document.getElementById('feedback');
-    const nextBtn = document.getElementById('next-btn');
-
-    feedback.className = "feedback hidden";
-    nextBtn.classList.add('hidden');
-    
-    currentQuestionIndex++;
-
-    if (currentQuestionIndex > MAX_QUESTIONS_PER_BLOCK) {
-        qBox.innerText = `🏆 Блок из 10 вопросов пройден! Ты набрал ${score} очков. Молодец, ${userName}!`;
-        optBox.innerHTML = "";
-        nextBtn.innerText = "🔄 Начать новый блок из 10 вопросов";
-        nextBtn.onclick = () => {
-            currentQuestionIndex = 0;
-            nextBtn.innerText = "➡️ Следующий вопрос";
-            nextBtn.onclick = nextQuestion;
-            loadQuestionFromAI();
-        };
-        nextBtn.classList.remove('hidden');
-        return;
+// Старт приложения
+startBtn.addEventListener("click", () => {
+    const name = userNameInput.value.trim();
+    if (name) {
+        currentUserName = name;
+        displayName.textContent = name;
+        welcomeScreen.classList.add("hidden");
+        appScreen.classList.remove("hidden");
+        loadQuestion();
     }
+});
 
-    qBox.innerText = `🦉 [Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] Профессор Фил придумывает вопрос...`;
-    optBox.innerHTML = "";
+// Загрузка вопроса
+async function loadQuestion() {
+    questionTopic.textContent = "Анализируем прогресс...";
+    questionText.textContent = "ИИ генерирует вопрос...";
+    optionsContainer.innerHTML = "";
+    feedbackContainer.classList.add("hidden");
+    nextBtn.classList.add("hidden");
 
     try {
-        const response = await fetch('/api/get-question', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: userName })
+        const response = await fetch(`${BACKEND_URL}/api/get-question`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: currentUserName })
         });
         
-        const data = await response.json();
+        currentQuestionData = await response.json();
+        scoreDisplay.textContent = currentQuestionData.user_score;
         
-        if (currentQuestionIndex === 1 && data.user_score !== undefined) {
-            score = data.user_score;
-            updateScore();
-        }
-        
-        currentTopic = data.topic || "Общие знания";
-        currentSubcategory = data.subcategory || "Разное";
+        questionTopic.textContent = `${currentQuestionData.topic} • ${currentQuestionData.subcategory}`;
+        questionText.textContent = currentQuestionData.question;
 
-        qBox.innerText = `[Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] ${currentTopic} (${currentSubcategory}): ${data.question}`;
-        
-        optBox.innerHTML = "";
-        data.options.forEach(option => {
-            const btn = document.createElement('button');
+        currentQuestionData.options.forEach(optionText => {
+            const btn = document.createElement("button");
             btn.className = "option-btn";
-            btn.innerText = option;
-            btn.onclick = () => checkAnswer(option, data.correctAnswer, data.explanation);
-            optBox.appendChild(btn);
+            btn.textContent = optionText;
+            btn.onclick = () => handleAnswer(btn, optionText);
+            optionsContainer.appendChild(btn);
         });
-
-    } catch (e) {
-        qBox.innerText = "Не удалось загрузить вопрос. Проверь подключение к серверу.";
+    } catch (error) {
+        questionText.textContent = "Ошибка связи с сервером.";
     }
 }
 
-async function checkAnswer(selected, correct, explanation) {
-    const feedback = document.getElementById('feedback');
-    const optBox = document.getElementById('options-container');
-    const nextBtn = document.getElementById('next-btn');
+// Озвучка вопроса
+speakQuestionBtn.addEventListener("click", () => {
+    if (currentQuestionData && currentQuestionData.question) {
+        speakText(currentQuestionData.question);
+    }
+});
 
-    const cleanSelected = String(selected).trim().toLowerCase();
-    const cleanCorrect = String(correct).trim().toLowerCase();
-    const isCorrect = (cleanSelected === cleanCorrect);
-
-    Array.from(optBox.children).forEach(btn => btn.disabled = true);
+// Обработка ответа
+async function handleAnswer(selectedBtn, selectedText) {
+    const isCorrect = selectedText === currentQuestionData.correctAnswer;
+    
+    // Блокируем кнопки
+    const allBtns = optionsContainer.querySelectorAll(".option-btn");
+    allBtns.forEach(b => b.disabled = true);
 
     if (isCorrect) {
-        score += 1;
-        updateScore();
-        feedback.innerText = `✅ Правильно! ${explanation}`;
-        feedback.className = "feedback success";
+        selectedBtn.classList.add("correct");
+        feedbackContainer.textContent = `Правильно! ${currentQuestionData.explanation}`;
+        feedbackContainer.className = "feedback success";
     } else {
-        feedback.innerText = `❌ Не совсем так. Правильный ответ: ${correct}. ${explanation}`;
-        feedback.className = "feedback error";
+        selectedBtn.classList.add("wrong");
+        feedbackContainer.textContent = `Не совсем. Правильный ответ: ${currentQuestionData.correctAnswer}. ${currentQuestionData.explanation}`;
+        feedbackContainer.className = "feedback error";
+        
+        // Подсвечиваем правильный
+        allBtns.forEach(b => {
+            if (b.textContent === currentQuestionData.correctAnswer) {
+                b.classList.add("correct");
+            }
+        });
     }
 
-    feedback.classList.remove('hidden');
-    nextBtn.classList.remove('hidden');
+    feedbackContainer.classList.remove("hidden");
+    nextBtn.classList.remove("hidden");
 
+    // Отправляем результат на бэкенд
     try {
-        await fetch('/api/submit-answer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(`${BACKEND_URL}/api/submit-answer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                name: userName,
+                name: currentUserName,
                 is_correct: isCorrect,
-                topic: currentTopic,
-                subcategory: currentSubcategory
+                topic: currentQuestionData.topic,
+                subcategory: currentQuestionData.subcategory
             })
         });
-    } catch(e) {
-        console.log("Ошибка сохранения в базу:", e);
+        const data = await res.json();
+        if (data.score !== undefined) {
+            scoreDisplay.textContent = data.score;
+        }
+    } catch (e) {
+        console.error("Ошибка сохранения:", e);
     }
 }
 
-function nextQuestion() {
-    loadQuestionFromAI();
-}
+nextBtn.addEventListener("click", loadQuestion);
 
-function updateScore() {
-    document.getElementById('score').innerText = score;
-}
-
-// --- ЧАТ И ГОЛОСОВОЙ ВВОД ---
-
-function renderChatHistory() {
-    const chatLog = document.getElementById('chat-log');
-    chatLog.innerHTML = "";
-    
-    chatHistory.forEach((msg, index) => {
-        if (msg.role === "user") {
-            chatLog.innerHTML += `<div class="msg user-msg"><strong>${userName}:</strong> ${msg.content}</div>`;
-        } else {
-            const isLastBotMsg = (index === chatHistory.length - 1);
-            if (isLastBotMsg) lastBotText = msg.content;
-            
-            let repeatButtonHtml = isLastBotMsg ? ` <button class="repeat-btn" onclick="repeatLastMessage()">🔊 Повторить</button>` : '';
-            
-            chatLog.innerHTML += `
-                <div class="msg bot-msg">
-                    <strong>Фил:</strong> ${msg.content}
-                    ${repeatButtonHtml}
-                </div>`;
-        }
-    });
-    chatLog.scrollTop = chatLog.scrollHeight;
-}
+// Чат с ИИ
+sendBtn.addEventListener("click", sendMessage);
+chatInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") sendMessage();
+});
 
 async function sendMessage() {
-    const micBtn = document.getElementById('mic-btn');
-    if (recognition && micBtn.classList.contains('recording')) {
-        micBtn.classList.remove('recording');
-        try { recognition.stop(); } catch(e) {}
-    }
-
-    const input = document.getElementById('chat-input');
-    const text = input.value.trim();
+    const text = chatInput.value.trim();
     if (!text) return;
-    
-    fullSpeechBuffer = "";
-    
+
+    appendMessage(text, "user");
+    chatInput.value = "";
     chatHistory.push({ role: "user", content: text });
-    localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
-    
-    renderChatHistory();
-    input.value = "";
-    
+
+    const aiMsgDiv = appendMessage("Печатает...", "ai");
+
     try {
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ history: chatHistory, name: userName })
+        const response = await fetch(`${BACKEND_URL}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: currentUserName, history: chatHistory })
         });
-        
         const data = await response.json();
         
+        aiMsgDiv.innerHTML = data.reply;
+        
+        // Добавляем кнопку озвучки ответа ИИ
+        const speakBtn = document.createElement("button");
+        speakBtn.className = "speak-btn";
+        speakBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+        speakBtn.onclick = () => speakText(data.reply);
+        aiMsgDiv.appendChild(speakBtn);
+
         chatHistory.push({ role: "assistant", content: data.reply });
-        lastBotText = data.reply;
-        localStorage.setItem('chatHistory_' + userName, JSON.stringify(chatHistory));
-        
-        renderChatHistory();
-        speakText(data.reply); 
-        
-    } catch (e) {
-        const chatLog = document.getElementById('chat-log');
-        chatLog.innerHTML += `<div class="msg error-msg">Ошибка связи с сервером!</div>`;
+    } catch (error) {
+        aiMsgDiv.textContent = "Ошибка связи.";
     }
 }
 
-function toggleAudio() {
-    isAudioMuted = !isAudioMuted;
-    const muteBtn = document.getElementById('mute-btn');
-    if (isAudioMuted) {
-        muteBtn.innerText = "🔇 Звук выкл";
-        muteBtn.classList.add('muted');
-        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    } else {
-        muteBtn.innerText = "🔊 Звук вкл";
-        muteBtn.classList.remove('muted');
-    }
+function appendMessage(text, sender) {
+    const div = document.createElement("div");
+    div.className = `chat-message ${sender}`;
+    div.textContent = text;
+    chatHistoryDiv.appendChild(div);
+    chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+    return div;
 }
 
+// Web Speech API (Распознавание)
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ru-RU';
+    
+    voiceBtn.addEventListener("click", () => {
+        voiceBtn.style.color = "var(--danger)";
+        recognition.start();
+    });
+
+    recognition.onresult = (event) => {
+        chatInput.value = event.results[0][0].transcript;
+        voiceBtn.style.color = "";
+        sendMessage();
+    };
+
+    recognition.onerror = () => {
+        voiceBtn.style.color = "";
+    };
+} else {
+    voiceBtn.style.display = "none";
+}
+
+// Озвучка текста (Синтез)
 function speakText(text) {
-    if (isAudioMuted) return; 
     if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); 
+        window.speechSynthesis.cancel(); // Остановить предыдущую озвучку
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'ru-RU';
-        utterance.rate = 1.0; 
-        const voices = window.speechSynthesis.getVoices();
-        const russianVoice = voices.find(voice => voice.lang.includes('ru') || voice.lang.includes('RU'));
-        if (russianVoice) utterance.voice = russianVoice;
+        utterance.rate = 0.9; // Чуть медленнее для ребенка
         window.speechSynthesis.speak(utterance);
     }
 }
-
-function repeatLastMessage() {
-    if (lastBotText) speakText(lastBotText);
-}
-
-// Микрофон
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition;
-let fullSpeechBuffer = "";
-
-if (SpeechRecognition) {
-    recognition = new SpeechRecognition();
-    recognition.lang = 'ru-RU';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    
-    recognition.onresult = (event) => {
-        let interimText = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                fullSpeechBuffer += " " + transcript;
-            } else {
-                interimText += transcript;
-            }
-        }
-        document.getElementById('chat-input').value = (fullSpeechBuffer + " " + interimText).trim();
-    };
-
-    recognition.onend = () => {
-        const micBtn = document.getElementById('mic-btn');
-        if (micBtn.classList.contains('recording')) {
-            try { recognition.start(); } catch (e) {}
-        }
-    };
-}
-
-document.getElementById('mic-btn').addEventListener('click', () => {
-    if (!recognition) {
-        alert("Твой браузер не поддерживает голосовой ввод. Попробуй Chrome!");
-        return;
-    }
-    const micBtn = document.getElementById('mic-btn');
-    const inputField = document.getElementById('chat-input');
-    
-    if (micBtn.classList.contains('recording')) {
-        micBtn.classList.remove('recording');
-        try { recognition.stop(); } catch (e) {}
-        setTimeout(() => {
-            if (inputField.value.trim()) sendMessage();
-            fullSpeechBuffer = "";
-        }, 100);
-    } else {
-        fullSpeechBuffer = "";
-        inputField.value = "";
-        try {
-            recognition.start();
-            micBtn.classList.add('recording');
-        } catch (e) {}
-    }
-});

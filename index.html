@@ -1,62 +1,86 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Умные Задачи</title>
-    <link rel="stylesheet" href="/style.css?v=3">
+    <title>AI Обучение</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-container">
-        
-        <!-- ЭКРАН 1: Приветствие и знакомство -->
-        <div id="welcome-screen">
-            <div class="teacher-icon">🦉</div>
-            <h1>Привет!</h1>
-            <p class="teacher-speech">Я профессор Фил. А как зовут тебя?</p>
-            
-            <input type="text" id="username" placeholder="Моё имя..." autocomplete="off">
-            <br>
-            <button class="action-btn" onclick="saveNameAndStart()">Познакомиться</button>
+
+    <header class="app-header">
+        <div class="logo-container">
+            <!-- Стильный SVG Логотип -->
+            <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <h1>AI Academy</h1>
+        </div>
+        <button id="theme-toggle" class="icon-btn" aria-label="Переключить тему">
+            <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
+    </header>
+
+    <div class="container">
+        <!-- Экран приветствия -->
+        <div id="welcome-screen" class="card">
+            <h2>Добро пожаловать</h2>
+            <p class="subtitle">Введите имя, чтобы начать обучение</p>
+            <input type="text" id="user-name" placeholder="Ваше имя..." autocomplete="off">
+            <button id="start-btn" class="primary-btn">
+                <span>Начать</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
         </div>
 
-        <!-- ЭКРАН 2: Уроки и Чат с профессором -->
-        <div id="main-screen" class="hidden">
-            <header class="top-bar">
-                <button class="back-btn" onclick="goBack()" title="Сменить имя">🔙 Назад</button>
-                <div class="score-board">Очки: <span id="score">0</span></div>
-            </header>
+        <!-- Основной экран -->
+        <div id="app-screen" class="hidden">
+            <div class="stats-bar">
+                <span id="display-name" class="badge"></span>
+                <span class="badge highlight">Очки: <span id="score">0</span></span>
+            </div>
 
-            <h1 id="greeting">Тренировка Ума 🧠</h1>
-            
-            <main id="lesson-container">
-                <div id="question-box" class="card">
-                    <h2 id="question-text">Нажми "Начать", чтобы запустить урок!</h2>
-                    <div id="image-container"></div>
-                    <div id="options-container" class="options"></div>
-                    <button id="start-btn" class="action-btn" onclick="startLesson()">Начать</button>
+            <!-- Блок с вопросом -->
+            <div class="card quiz-card">
+                <div class="topic-label" id="question-topic">Загрузка темы...</div>
+                
+                <div class="question-header">
+                    <h3 id="question-text">Готовим вопрос...</h3>
+                    <button id="speak-question-btn" class="icon-btn action-btn" title="Озвучить вопрос">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                    </button>
                 </div>
-                <div id="feedback" class="feedback hidden"></div>
-                <button id="next-btn" class="action-btn hidden" onclick="nextQuestion()" style="margin-top: 15px;">➡️ Следующий вопрос</button>
-            </main>
 
-            <!-- БЛОК ЧАТА С МИКРОФОНОМ И КНОПКОЙ ЗВУКА -->
-            <div id="chat-section" class="card">
-                <div class="chat-header-row">
-                    <h3>💬 Спроси профессора Фила</h3>
-                    <button id="mute-btn" onclick="toggleAudio()" title="Включить/выключить звук">🔊 Звук вкл</button>
+                <div id="options-container" class="options-grid"></div>
+                
+                <div id="feedback-container" class="feedback hidden"></div>
+                <button id="next-btn" class="primary-btn hidden">Следующий вопрос</button>
+            </div>
+
+            <!-- Блок чата -->
+            <div class="card chat-card">
+                <div class="chat-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    <h3>AI Ассистент</h3>
                 </div>
-                <div id="chat-log"></div>
-                <div class="chat-controls">
-                    <button id="mic-btn" class="mic-btn" title="Нажми и говори">🎤</button>
-                    <input type="text" id="chat-input" placeholder="Напиши или продиктуй голосом..." autocomplete="off">
-                    <button id="send-btn" class="action-btn" onclick="sendMessage()">Отправить</button>
+                <div id="chat-history" class="chat-history"></div>
+                
+                <div class="chat-input-area">
+                    <button id="voice-btn" class="icon-btn voice-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                    </button>
+                    <input type="text" id="chat-input" placeholder="Задайте вопрос...">
+                    <button id="send-btn" class="icon-btn send-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
                 </div>
             </div>
         </div>
-
     </div>
 
-    <script src="/script.js?v=3"></script>
+    <script src="script.js"></script>
 </body>
 </html>
