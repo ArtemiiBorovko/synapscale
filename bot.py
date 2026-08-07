@@ -31,7 +31,6 @@ def get_db_connection():
         print("Ошибка подключения к БД:", e)
         return None
 
-# Автоматическая инициализация таблицы при запуске
 def init_db():
     conn = get_db_connection()
     if conn:
@@ -41,7 +40,7 @@ def init_db():
                     user_name VARCHAR(100) PRIMARY KEY,
                     score INT DEFAULT 0,
                     total_questions INT DEFAULT 0,
-                    weak_topics TEXT DEFAULT ''
+                    weak_topics TEXT DEFAULT '{}'
                 );
             """)
             conn.commit()
@@ -66,43 +65,57 @@ async def get_style():
 async def get_question(request: Request):
     try:
         data = await request.json()
-        user_name = data.get("name", "Друг")
+        user_name = data.get("name", "Друг").strip()
 
         score = 0
-        weak_topics = ""
+        weak_dict = {}
         
-        # Получаем статистику ребёнка из базы данных Neon
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM child_profiles WHERE user_name = %s", (user_name,))
+                cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
-                    cur.execute("INSERT INTO child_profiles (user_name) VALUES (%s)", (user_name,))
+                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics) VALUES (%s, '{}')", (user_name,))
                     conn.commit()
                 else:
                     score = user_data["score"]
-                    weak_topics = user_data["weak_topics"]
+                    # Пытаемся прочитать старые ошибки, защищаемся от сбоев, если там старый формат
+                    try:
+                        weak_dict = json.loads(user_data["weak_topics"] if user_data["weak_topics"] else '{}')
+                    except:
+                        weak_dict = {}
             conn.close()
 
-        # Формируем инструкцию для генерации JSON-структуры
+        # Формируем читаемый список ошибок для ИИ
+        weak_topics_str = "Пока нет ошибок! Ребёнок молодец, давай новые случайные темы."
+        if weak_dict:
+            # Оставляем только те темы, где количество ошибок больше 0
+            active_weak_topics = [f"{k} (ошибок: {v})" for k, v in weak_dict.items() if v > 0]
+            if active_weak_topics:
+                weak_topics_str = ", ".join(active_weak_topics)
+
         system_prompt = f"""
         Ты — профессор Фил, умный учитель для 6-летнего ребёнка по имени {user_name}.
         Сгенерируй один интересный интерактивный вопрос с 4 вариантами ответов.
 
         КОНТЕКСТ УЧЕНИКА:
         - Текущие очки: {score}
-        - Слабые темы (где ребенок ошибался ранее): "{weak_topics if weak_topics else 'пока нет'}".
-        Если у ребенка есть слабые темы, сделай упор на них для тренировки.
+        - Слабые темы для отработки: {weak_topics_str}
+
+        АЛГОРИТМ ВЫБОРА ТЕМЫ:
+        1. Если в "Слабых темах" есть данные, ТЫ ОБЯЗАН выбрать одну из этих тем и сгенерировать вопрос для её проработки.
+        2. Если слабых тем нет, придумай СОВЕРШЕННО НОВУЮ тему (Математика, Биология, География, Астрономия, Обществознание) и подтему.
 
         ТРЕБОВАНИЯ К ОТВЕТУ:
-        Ты должен вернуть ТОЛЬКО валидный JSON-объект без лишнего текста и без markdown-разметки:
+        Верни ТОЛЬКО валидный JSON без markdown-разметки:
         {{
             "question": "Текст вопроса...",
             "options": ["Вариант 1", "Вариант 2", "Вариант 3", "Вариант 4"],
             "correctAnswer": "Точный текст правильного варианта",
             "explanation": "Короткое доброе объяснение (1-2 предложения)",
-            "topic": "Название темы (например: Математика, Биология, Астрономия, Логика)"
+            "topic": "Предмет (например: Математика, Биология)",
+            "subcategory": "Узкая подтема (например: Вычитание через десяток, Планеты-гиганты, Виды птиц)"
         }}
         """
 
@@ -120,13 +133,13 @@ async def get_question(request: Request):
 
     except Exception as e:
         print("Ошибка генерации вопроса:", e)
-        # Резервный вопрос на случай сбоя API
         return {
             "question": "Сколько лапок у двух котиков вместе?",
             "options": ["4", "6", "8", "10"],
             "correctAnswer": "8",
             "explanation": "У каждого котика по 4 лапки: 4 + 4 = 8!",
             "topic": "Математика",
+            "subcategory": "Сложение",
             "user_score": 0
         }
 
@@ -135,30 +148,58 @@ async def get_question(request: Request):
 async def submit_answer(request: Request):
     try:
         data = await request.json()
-        user_name = data.get("name")
+        user_name = data.get("name", "").strip()
         is_correct = data.get("is_correct")
-        topic = data.get("topic")
+        topic = data.get("topic", "Общие знания")
+        subcategory = data.get("subcategory", "Разное")
+
+        if not user_name:
+            return {"status": "error", "message": "Имя не указано"}
+
+        full_topic_key = f"{topic}: {subcategory}"
+        new_score = 0
 
         conn = get_db_connection()
-        new_score = 0
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Читаем текущий словарь ошибок
+                cur.execute("SELECT weak_topics FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
+                row = cur.fetchone()
+                
+                weak_dict = {}
+                if row and row["weak_topics"]:
+                    try:
+                        weak_dict = json.loads(row["weak_topics"])
+                    except:
+                        weak_dict = {}
+
+                # ЛОГИКА НАЧИСЛЕНИЯ ОШИБОК
+                if is_correct:
+                    # Если ответил правильно - стираем 1 ошибку из памяти
+                    if full_topic_key in weak_dict:
+                        weak_dict[full_topic_key] -= 1
+                        if weak_dict[full_topic_key] <= 0:
+                            del weak_dict[full_topic_key] # Полностью удаляем проработанную тему
+                else:
+                    # Если ответил неправильно - добавляем ошибку
+                    weak_dict[full_topic_key] = weak_dict.get(full_topic_key, 0) + 1
+
+                # Упаковываем обратно в текст для БД
+                new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
+
+                # Записываем в базу
                 if is_correct:
                     cur.execute("""
                         UPDATE child_profiles 
-                        SET score = score + 1, total_questions = total_questions + 1 
-                        WHERE user_name = %s RETURNING score
-                    """, (user_name,))
+                        SET score = score + 1, total_questions = total_questions + 1, weak_topics = %s
+                        WHERE LOWER(user_name) = LOWER(%s) RETURNING score
+                    """, (new_weak_topics_str, user_name))
                 else:
                     cur.execute("""
                         UPDATE child_profiles 
-                        SET total_questions = total_questions + 1,
-                            weak_topics = CASE 
-                                WHEN weak_topics LIKE %s THEN weak_topics 
-                                ELSE CONCAT(weak_topics, ', ', %s) 
-                            END
-                        WHERE user_name = %s RETURNING score
-                    """, (f"%{topic}%", topic, user_name))
+                        SET total_questions = total_questions + 1, weak_topics = %s
+                        WHERE LOWER(user_name) = LOWER(%s) RETURNING score
+                    """, (new_weak_topics_str, user_name))
                 
                 row = cur.fetchone()
                 if row:
@@ -168,6 +209,7 @@ async def submit_answer(request: Request):
 
         return {"status": "ok", "score": new_score}
     except Exception as e:
+        print("Ошибка сохранения в базу:", e)
         return {"status": "error", "message": str(e)}
 
 # --- 3. РУЧКА ОБУЧАЮЩЕГО ЧАТА ---

@@ -4,7 +4,8 @@ let chatHistory = [];
 let isAudioMuted = false;
 let lastBotText = "";
 let currentTopic = "";
-let currentQuestionIndex = 0; // Счётчик вопросов в блоке
+let currentSubcategory = ""; // Добавили переменную для подтемы
+let currentQuestionIndex = 0; 
 const MAX_QUESTIONS_PER_BLOCK = 10;
 
 window.onload = () => {
@@ -54,7 +55,6 @@ async function loadQuestionFromAI() {
     
     currentQuestionIndex++;
 
-    // Если блок из 10 вопросов пройден — подводим итоги
     if (currentQuestionIndex > MAX_QUESTIONS_PER_BLOCK) {
         qBox.innerText = `🏆 Блок из 10 вопросов пройден! Ты набрал ${score} очков. Молодец, ${userName}!`;
         optBox.innerHTML = "";
@@ -81,14 +81,16 @@ async function loadQuestionFromAI() {
         
         const data = await response.json();
         
-        // Синхронизируем базовые очки из БД только на первом вопросе блока
         if (currentQuestionIndex === 1 && data.user_score !== undefined) {
             score = data.user_score;
             updateScore();
         }
         
         currentTopic = data.topic || "Общие знания";
-        qBox.innerText = `[Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] (${currentTopic}): ${data.question}`;
+        currentSubcategory = data.subcategory || "Разное";
+        
+        // Выводим предмет и конкретную подтему, чтобы ребёнок понимал, что он учит
+        qBox.innerText = `[Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] ${currentTopic} (${currentSubcategory}): ${data.question}`;
         
         optBox.innerHTML = "";
         data.options.forEach(option => {
@@ -109,12 +111,10 @@ async function checkAnswer(selected, correct, explanation) {
     const optBox = document.getElementById('options-container');
     const nextBtn = document.getElementById('next-btn');
 
-    // Очищаем пробелы и регистр для точного сравнения
     const cleanSelected = String(selected).trim().toLowerCase();
     const cleanCorrect = String(correct).trim().toLowerCase();
     const isCorrect = (cleanSelected === cleanCorrect);
 
-    // Блокируем кнопки
     Array.from(optBox.children).forEach(btn => btn.disabled = true);
 
     if (isCorrect) {
@@ -130,7 +130,7 @@ async function checkAnswer(selected, correct, explanation) {
     feedback.classList.remove('hidden');
     nextBtn.classList.remove('hidden');
 
-    // Сохраняем в Neon DB
+    // Сохраняем в Neon DB вместе с подтемой
     try {
         await fetch('/api/submit-answer', {
             method: 'POST',
@@ -138,7 +138,8 @@ async function checkAnswer(selected, correct, explanation) {
             body: JSON.stringify({
                 name: userName,
                 is_correct: isCorrect,
-                topic: currentTopic
+                topic: currentTopic,
+                subcategory: currentSubcategory
             })
         });
     } catch(e) {
