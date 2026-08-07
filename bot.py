@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +67,7 @@ async def get_question(request: Request):
     try:
         data = await request.json()
         user_name = data.get("name", "Друг").strip()
+        asked_questions = data.get("asked_questions", [])  # История вопросов текущего блока
 
         score = 0
         weak_dict = {}
@@ -80,42 +82,49 @@ async def get_question(request: Request):
                     conn.commit()
                 else:
                     score = user_data["score"]
-                    # Пытаемся прочитать старые ошибки, защищаемся от сбоев, если там старый формат
                     try:
                         weak_dict = json.loads(user_data["weak_topics"] if user_data["weak_topics"] else '{}')
                     except:
                         weak_dict = {}
             conn.close()
 
-        # Формируем читаемый список ошибок для ИИ
-        weak_topics_str = "Пока нет ошибок! Ребёнок молодец, давай новые случайные темы."
+        # Формируем список слабых тем
+        weak_topics_str = "Пока нет ошибок!"
         if weak_dict:
-            # Оставляем только те темы, где количество ошибок больше 0
             active_weak_topics = [f"{k} (ошибок: {v})" for k, v in weak_dict.items() if v > 0]
             if active_weak_topics:
                 weak_topics_str = ", ".join(active_weak_topics)
 
+        # Выбираем случайный предмет для разнообразия, если ошибок нет
+        all_subjects = ["Математика", "Биология", "География", "Астрономия", "Обществознание", "История"]
+        random_subject_hint = random.choice(all_subjects)
+
+        asked_str = "\n".join([f"- {q}" for q in asked_questions]) if asked_questions else "Ещё не было вопросов."
+
         system_prompt = f"""
-        Ты — профессор Фил, умный учитель для 6-летнего ребёнка по имени {user_name}.
-        Сгенерируй один интересный интерактивный вопрос с 4 вариантами ответов.
+        Ты — профессор Фил, умный и веселый учитель для 6-летнего ребёнка по имени {user_name}.
+        Сгенерируй один УНИКАЛЬНЫЙ и ИНТЕРЕСНЫЙ вопрос с 4 вариантами ответов.
 
         КОНТЕКСТ УЧЕНИКА:
         - Текущие очки: {score}
         - Слабые темы для отработки: {weak_topics_str}
 
-        АЛГОРИТМ ВЫБОРА ТЕМЫ:
-        1. Если в "Слабых темах" есть данные, ТЫ ОБЯЗАН выбрать одну из этих тем и сгенерировать вопрос для её проработки.
-        2. Если слабых тем нет, придумай СОВЕРШЕННО НОВУЮ тему (Математика, Биология, География, Астрономия, Обществознание) и подтему.
+        ВОПРОСЫ, КОТОРЫЕ УЖЕ БЫЛИ ЗАДАНЫ В ЭТОМ БЛОКЕ (СТРОГО ЗАПРЕЩЕНО ПОВТОРЯТЬ ИХ ИЛИ ЭТИ ТЕМЫ):
+        {asked_str}
 
-        ТРЕБОВАНИЯ К ОТВЕТУ:
-        Верни ТОЛЬКО валидный JSON без markdown-разметки:
+        ПРАВИЛА ВЫБОРА ТЕМЫ И ВОПРОСА:
+        1. Если в "Слабых темах" есть активные ошибки, выбери одну из них и сгенерируй НОВЫЙ вопрос по этой теме.
+        2. Если ошибок нет, выбери предмет (желательно {random_subject_hint} или любой другой из списка: {', '.join(all_subjects)}) и придумай тему, которой ЕЩЁ НЕ было в блоке.
+        3. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО задавать подряд вопросы на одну и ту же тему или про одну и ту же планету/предмет!
+
+        ТРЕБОВАНИЯ К ОТВЕТУ (ТОЛЬКО VALID JSON):
         {{
-            "question": "Текст вопроса...",
+            "question": "Текст уникального вопроса...",
             "options": ["Вариант 1", "Вариант 2", "Вариант 3", "Вариант 4"],
             "correctAnswer": "Точный текст правильного варианта",
             "explanation": "Короткое доброе объяснение (1-2 предложения)",
-            "topic": "Предмет (например: Математика, Биология)",
-            "subcategory": "Узкая подтема (например: Вычитание через десяток, Планеты-гиганты, Виды птиц)"
+            "topic": "Предмет",
+            "subcategory": "Конкретная узкая подтема"
         }}
         """
 
@@ -123,7 +132,7 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.7
+            temperature=0.85  # Подняли температуру для большей вариативности
         )
 
         response_content = completion.choices[0].message.content
@@ -162,7 +171,6 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Читаем текущий словарь ошибок
                 cur.execute("SELECT weak_topics FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 row = cur.fetchone()
                 
@@ -173,21 +181,16 @@ async def submit_answer(request: Request):
                     except:
                         weak_dict = {}
 
-                # ЛОГИКА НАЧИСЛЕНИЯ ОШИБОК
                 if is_correct:
-                    # Если ответил правильно - стираем 1 ошибку из памяти
                     if full_topic_key in weak_dict:
                         weak_dict[full_topic_key] -= 1
                         if weak_dict[full_topic_key] <= 0:
-                            del weak_dict[full_topic_key] # Полностью удаляем проработанную тему
+                            del weak_dict[full_topic_key]
                 else:
-                    # Если ответил неправильно - добавляем ошибку
                     weak_dict[full_topic_key] = weak_dict.get(full_topic_key, 0) + 1
 
-                # Упаковываем обратно в текст для БД
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
 
-                # Записываем в базу
                 if is_correct:
                     cur.execute("""
                         UPDATE child_profiles 
