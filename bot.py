@@ -32,6 +32,7 @@ def get_db_connection():
         print("Ошибка подключения к БД:", e)
         return None
 
+# Инициализация и автоматическая миграция БД
 def init_db():
     conn = get_db_connection()
     if conn:
@@ -41,8 +42,13 @@ def init_db():
                     user_name VARCHAR(100) PRIMARY KEY,
                     score INT DEFAULT 0,
                     total_questions INT DEFAULT 0,
-                    weak_topics TEXT DEFAULT '{}'
+                    weak_topics TEXT DEFAULT '{}',
+                    recent_questions TEXT DEFAULT '[]'
                 );
+            """)
+            # Добавляем колонку recent_questions, если её не было
+            cur.execute("""
+                ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_questions TEXT DEFAULT '[]';
             """)
             conn.commit()
         conn.close()
@@ -67,10 +73,10 @@ async def get_question(request: Request):
     try:
         data = await request.json()
         user_name = data.get("name", "Друг").strip()
-        asked_questions = data.get("asked_questions", [])  # История вопросов текущего блока
 
         score = 0
         weak_dict = {}
+        recent_questions_list = []
         
         conn = get_db_connection()
         if conn:
@@ -78,14 +84,18 @@ async def get_question(request: Request):
                 cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
-                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics) VALUES (%s, '{}')", (user_name,))
+                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_questions) VALUES (%s, '{}', '[]')", (user_name,))
                     conn.commit()
                 else:
                     score = user_data["score"]
                     try:
-                        weak_dict = json.loads(user_data["weak_topics"] if user_data["weak_topics"] else '{}')
+                        weak_dict = json.loads(user_data.get("weak_topics") or '{}')
                     except:
                         weak_dict = {}
+                    try:
+                        recent_questions_list = json.loads(user_data.get("recent_questions") or '[]')
+                    except:
+                        recent_questions_list = []
             conn.close()
 
         # Формируем список слабых тем
@@ -95,36 +105,45 @@ async def get_question(request: Request):
             if active_weak_topics:
                 weak_topics_str = ", ".join(active_weak_topics)
 
-        # Выбираем случайный предмет для разнообразия, если ошибок нет
+        # Подсказка по случайному предмету
         all_subjects = ["Математика", "Биология", "География", "Астрономия", "Обществознание", "История"]
         random_subject_hint = random.choice(all_subjects)
 
-        asked_str = "\n".join([f"- {q}" for q in asked_questions]) if asked_questions else "Ещё не было вопросов."
+        recent_str = "\n".join([f"- {q}" for q in recent_questions_list[-25:]]) if recent_questions_list else "История вопросов пуста."
 
         system_prompt = f"""
-        Ты — профессор Фил, умный и веселый учитель для 6-летнего ребёнка по имени {user_name}.
-        Сгенерируй один УНИКАЛЬНЫЙ и ИНТЕРЕСНЫЙ вопрос с 4 вариантами ответов.
+        Ты — профессор Фил, добрый и увлеченный учитель для ребёнка по имени {user_name}.
+        
+        ПРОФИЛЬ УЧЕНИКА И СЛОЖНОСТЬ:
+        - Возраст/уровень: 8-9 лет (2-3 класс начальной школы). 
+        - Вопросы должны быть понятными, детскими, но увлекательными.
+        - СТРОГО ЗАПРЕЩЕНЫ: вузовские термины (никакой кинематики, квантовой физики, сложных дат, узких исторический терминов вроде Менеса).
+        - ЯЗЫК: ТОЛЬКО 100% ЧИСТЫЙ РУССКИЙ ЯЗЫК! Никаких английских, испанских или латинских слов (никаких "volteo", "Ancient" и т.д.).
 
-        КОНТЕКСТ УЧЕНИКА:
-        - Текущие очки: {score}
-        - Слабые темы для отработки: {weak_topics_str}
+        ТЕКУЩИЕ ОШИБКИ И СЛАБЫЕ ТЕМЫ:
+        {weak_topics_str}
 
-        ВОПРОСЫ, КОТОРЫЕ УЖЕ БЫЛИ ЗАДАНЫ В ЭТОМ БЛОКЕ (СТРОГО ЗАПРЕЩЕНО ПОВТОРЯТЬ ИХ ИЛИ ЭТИ ТЕМЫ):
-        {asked_str}
+        ПОСЛЕДНИЕ ЗАДАНИЕ ВОПРОСЫ (КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ПОВТОРЯТЬ ИХ ИЛИ ИХ ТЕМЫ):
+        {recent_str}
 
-        ПРАВИЛА ВЫБОРА ТЕМЫ И ВОПРОСА:
-        1. Если в "Слабых темах" есть активные ошибки, выбери одну из них и сгенерируй НОВЫЙ вопрос по этой теме.
-        2. Если ошибок нет, выбери предмет (желательно {random_subject_hint} или любой другой из списка: {', '.join(all_subjects)}) и придумай тему, которой ЕЩЁ НЕ было в блоке.
-        3. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО задавать подряд вопросы на одну и ту же тему или про одну и ту же планету/предмет!
+        ПРАВИЛА ГЕНЕРАЦИИ:
+        1. Если есть активные "Слабые темы", сделай вопрос для их мягкой проработки (в адаптивной детской форме).
+        2. Если ошибок нет, выбери предмет "{random_subject_hint}" или любой другой из списка ({', '.join(all_subjects)}) и придумай НОВУЮ детскую тему.
+        3. Пример хороших тем для 8-9 лет:
+           - Математика: умножение 2x3, простые задачи про яблоки, геометрические фигуры (квадрат, треугольник).
+           - Биология: почему зебры полосатые, кто спит зимой, как дыхают рыбы.
+           - Астрономия: почему светит Луна, сколько планет (без ухода только в Юпитер!), что такое звезда.
+           - География: самый большой океан, где живут пингвины, материки.
+           - История: рыцари и замки, как изобрели колесо, древние пирамиды.
 
-        ТРЕБОВАНИЯ К ОТВЕТУ (ТОЛЬКО VALID JSON):
+        ТРЕБОВАНИЯ К ФОРМАТУ (ТОЛЬКО ЧИСТЫЙ VALID JSON):
         {{
-            "question": "Текст уникального вопроса...",
+            "question": "Интересный понятный вопрос на русском языке...",
             "options": ["Вариант 1", "Вариант 2", "Вариант 3", "Вариант 4"],
-            "correctAnswer": "Точный текст правильного варианта",
-            "explanation": "Короткое доброе объяснение (1-2 предложения)",
+            "correctAnswer": "Точный текст правильного ответа",
+            "explanation": "Короткое доброе объяснение (1-2 простые фразы)",
             "topic": "Предмет",
-            "subcategory": "Конкретная узкая подтема"
+            "subcategory": "Понятная детская подтема"
         }}
         """
 
@@ -132,12 +151,32 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.85  # Подняли температуру для большей вариативности
+            temperature=0.6  # Снизили температуру для исключения языковых галлюцинаций
         )
 
         response_content = completion.choices[0].message.content
         question_data = json.loads(response_content)
         question_data["user_score"] = score
+
+        # Сохраняем сгенерированный вопрос в историю БД
+        full_q_title = f"{question_data.get('topic', '')} ({question_data.get('subcategory', '')}): {question_data.get('question', '')}"
+        recent_questions_list.append(full_q_title)
+        
+        # Храним только последние 30 вопросов
+        if len(recent_questions_list) > 30:
+            recent_questions_list = recent_questions_list[-30:]
+
+        conn = get_db_connection()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE child_profiles 
+                    SET recent_questions = %s 
+                    WHERE LOWER(user_name) = LOWER(%s)
+                """, (json.dumps(recent_questions_list, ensure_ascii=False), user_name))
+                conn.commit()
+            conn.close()
+
         return question_data
 
     except Exception as e:
@@ -227,8 +266,8 @@ async def chat_with_robot(request: Request):
             return {"reply": "Ты ничего не написал! Попробуй еще раз."}
 
         system_prompt = f"""
-        Ты — Профессор Фил, мудрый, добрый и увлечённый сова-наставник для ребёнка {user_name} (6 лет).
-        Отвечай коротко (1-3 предложения), тепло, стимулируй любознательность и используй простые эмодзи.
+        Ты — Профессор Фил, мудрый, добрый и увлечённый сова-наставник для ребёнка {user_name} (8-9 лет).
+        Отвечай коротко (1-3 предложения), тепло, понятным языком, стимулируй любознательность и используй простые эмодзи.
         """
 
         messages_for_ai = [{"role": "system", "content": system_prompt}]
@@ -237,7 +276,7 @@ async def chat_with_robot(request: Request):
 
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=messages_for_ai,
+            messages=[{"role": "system", "content": messages_for_ai}],
             temperature=0.7,
             max_tokens=300
         )

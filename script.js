@@ -6,7 +6,6 @@ let lastBotText = "";
 let currentTopic = "";
 let currentSubcategory = "";
 let currentQuestionIndex = 0; 
-let askedQuestions = []; // Массив вопросов текущего блока
 const MAX_QUESTIONS_PER_BLOCK = 10;
 
 window.onload = () => {
@@ -42,7 +41,6 @@ function goBack() {
 function startLesson() {
     document.getElementById('start-btn').style.display = 'none';
     currentQuestionIndex = 0;
-    askedQuestions = []; // Сбрасываем историю при запуске
     loadQuestionFromAI();
 }
 
@@ -63,7 +61,6 @@ async function loadQuestionFromAI() {
         nextBtn.innerText = "🔄 Начать новый блок из 10 вопросов";
         nextBtn.onclick = () => {
             currentQuestionIndex = 0;
-            askedQuestions = []; // Очищаем историю для нового блока
             nextBtn.innerText = "➡️ Следующий вопрос";
             nextBtn.onclick = nextQuestion;
             loadQuestionFromAI();
@@ -79,10 +76,7 @@ async function loadQuestionFromAI() {
         const response = await fetch('/api/get-question', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                name: userName,
-                asked_questions: askedQuestions 
-            })
+            body: JSON.stringify({ name: userName })
         });
         
         const data = await response.json();
@@ -94,10 +88,6 @@ async function loadQuestionFromAI() {
         
         currentTopic = data.topic || "Общие знания";
         currentSubcategory = data.subcategory || "Разное";
-        
-        // Запоминаем вопрос/подтему в локальную историю
-        const fullQuestionSummary = `${currentTopic} (${currentSubcategory}): ${data.question}`;
-        askedQuestions.push(fullQuestionSummary);
 
         qBox.innerText = `[Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] ${currentTopic} (${currentSubcategory}): ${data.question}`;
         
