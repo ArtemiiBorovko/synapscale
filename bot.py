@@ -23,6 +23,53 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# БАЗА ПРЕДМЕТОВ И ПОДТЕМ ДЛЯ ЖЁСТКОЙ РОТАЦИИ НА СТОРOНЕ PYTHON
+TOPICS_POOL = {
+    "Математика": [
+        "Простые задачки на сложение и вычитание",
+        "Таблица умножения (простые примеры)",
+        "Геометрические фигуры (квадрат, круг, треугольник)",
+        "Логические последовательности и узоры",
+        "Единицы измерения (сантиметры, килограммы, литры)"
+    ],
+    "Биология и Природа": [
+        "Млекопитающие и их повадки",
+        "Насекомые и их секреты",
+        "Морские обитатели и рыбы",
+        "Растения, деревья и цветы",
+        "Перелетные и лесные птицы",
+        "Домашние животные и уход за ними"
+    ],
+    "География и Земля": [
+        "Материки и континенты",
+        "Реки, озера и водоемы",
+        "Горы, вулканы и пещеры",
+        "Страны, города и достопримечательности",
+        "Погода, облака и времена года"
+    ],
+    "Астрономия и Космос": [
+        "Солнце и Луна",
+        "Разнообразие планет Солнечной системы",
+        "Созвездия и ночное небо",
+        "Космонавты, ракеты и МКС",
+        "Астероиды и кометы"
+    ],
+    "История и Культура": [
+        "Древние рыцари и замки",
+        "Великие изобретения (колесо, компас, печать)",
+        "Древняя Греция и Олимпийские игры",
+        "Пирамиды и древние цивилизации",
+        "Путешественники и открытие новых земель"
+    ],
+    "Окружающий мир": [
+        "Правила дорожного движения и безопасность",
+        "Профессии людей (врач, пожарный, архитектор)",
+        "Правильное питание и здоровье",
+        "Экология и бережное отношение к природе",
+        "Музыкальные инструменты"
+    ]
+}
+
 def get_db_connection():
     if not DATABASE_URL:
         return None
@@ -32,7 +79,6 @@ def get_db_connection():
         print("Ошибка подключения к БД:", e)
         return None
 
-# Инициализация и автоматическая миграция БД
 def init_db():
     conn = get_db_connection()
     if conn:
@@ -43,12 +89,11 @@ def init_db():
                     score INT DEFAULT 0,
                     total_questions INT DEFAULT 0,
                     weak_topics TEXT DEFAULT '{}',
-                    recent_questions TEXT DEFAULT '[]'
+                    recent_subtopics TEXT DEFAULT '[]'
                 );
             """)
-            # Добавляем колонку recent_questions, если её не было
             cur.execute("""
-                ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_questions TEXT DEFAULT '[]';
+                ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_subtopics TEXT DEFAULT '[]';
             """)
             conn.commit()
         conn.close()
@@ -67,7 +112,7 @@ async def get_script():
 async def get_style():
     return FileResponse("style.css")
 
-# --- 1. РУЧКА ГЕНЕРАЦИИ ИИ-ВОПРОСА ДЛЯ КАРТОЧЕК ---
+# --- 1. РУЧКА ГЕНЕРАЦИИ ИИ-ВОПРОСА ---
 @app.post("/api/get-question")
 async def get_question(request: Request):
     try:
@@ -76,15 +121,15 @@ async def get_question(request: Request):
 
         score = 0
         weak_dict = {}
-        recent_questions_list = []
-        
+        recent_subtopics_list = []
+
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
-                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_questions) VALUES (%s, '{}', '[]')", (user_name,))
+                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_subtopics) VALUES (%s, '{}', '[]')", (user_name,))
                     conn.commit()
                 else:
                     score = user_data["score"]
@@ -93,57 +138,60 @@ async def get_question(request: Request):
                     except:
                         weak_dict = {}
                     try:
-                        recent_questions_list = json.loads(user_data.get("recent_questions") or '[]')
+                        recent_subtopics_list = json.loads(user_data.get("recent_subtopics") or '[]')
                     except:
-                        recent_questions_list = []
+                        recent_subtopics_list = []
             conn.close()
 
-        # Формируем список слабых тем
-        weak_topics_str = "Пока нет ошибок!"
-        if weak_dict:
-            active_weak_topics = [f"{k} (ошибок: {v})" for k, v in weak_dict.items() if v > 0]
-            if active_weak_topics:
-                weak_topics_str = ", ".join(active_weak_topics)
+        # 1. Выбор подтемы на стороне Python (Hard Exclusion)
+        chosen_topic = None
+        chosen_subcategory = None
 
-        # Подсказка по случайному предмету
-        all_subjects = ["Математика", "Биология", "География", "Астрономия", "Обществознание", "История"]
-        random_subject_hint = random.choice(all_subjects)
+        active_weak = [k for k, v in weak_dict.items() if v > 0]
+        if active_weak:
+            weak_key = random.choice(active_weak)
+            parts = weak_key.split(": ")
+            chosen_topic = parts[0]
+            chosen_subcategory = parts[1] if len(parts) > 1 else "Отработка ошибок"
+        else:
+            available_pairs = []
+            for topic, subtopics in TOPICS_POOL.items():
+                for sub in subtopics:
+                    pair_str = f"{topic}: {sub}"
+                    if pair_str not in recent_subtopics_list[-25:]: # Не повторяем последние 25 подтем
+                        available_pairs.append((topic, sub))
 
-        recent_str = "\n".join([f"- {q}" for q in recent_questions_list[-25:]]) if recent_questions_list else "История вопросов пуста."
+            if not available_pairs:
+                for topic, subtopics in TOPICS_POOL.items():
+                    for sub in subtopics:
+                        available_pairs.append((topic, sub))
 
+            chosen_topic, chosen_subcategory = random.choice(available_pairs)
+
+        # 2. Формируем промпт с ПРИНУДИТЕЛЬНОЙ подтемой
         system_prompt = f"""
-        Ты — профессор Фил, добрый и увлеченный учитель для ребёнка по имени {user_name}.
-        
-        ПРОФИЛЬ УЧЕНИКА И СЛОЖНОСТЬ:
-        - Возраст/уровень: 8-9 лет (2-3 класс начальной школы). 
-        - Вопросы должны быть понятными, детскими, но увлекательными.
-        - СТРОГО ЗАПРЕЩЕНЫ: вузовские термины (никакой кинематики, квантовой физики, сложных дат, узких исторический терминов вроде Менеса).
-        - ЯЗЫК: ТОЛЬКО 100% ЧИСТЫЙ РУССКИЙ ЯЗЫК! Никаких английских, испанских или латинских слов (никаких "volteo", "Ancient" и т.д.).
+        Ты — профессор Фил, добрый учитель для ребёнка по имени {user_name} (8-9 лет).
 
-        ТЕКУЩИЕ ОШИБКИ И СЛАБЫЕ ТЕМЫ:
-        {weak_topics_str}
+        ЗАДАЧА:
+        Сгенерируй один УНИКАЛЬНЫЙ и ИНТЕРЕСНЫЙ вопрос СТРОГО по указанной теме.
 
-        ПОСЛЕДНИЕ ЗАДАНИЕ ВОПРОСЫ (КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО ПОВТОРЯТЬ ИХ ИЛИ ИХ ТЕМЫ):
-        {recent_str}
+        ОБЯЗАТЕЛЬНАЯ ТЕМА И ПОДТЕМА:
+        - Предмет: {chosen_topic}
+        - Узкая подтема: {chosen_subcategory}
 
-        ПРАВИЛА ГЕНЕРАЦИИ:
-        1. Если есть активные "Слабые темы", сделай вопрос для их мягкой проработки (в адаптивной детской форме).
-        2. Если ошибок нет, выбери предмет "{random_subject_hint}" или любой другой из списка ({', '.join(all_subjects)}) и придумай НОВУЮ детскую тему.
-        3. Пример хороших тем для 8-9 лет:
-           - Математика: умножение 2x3, простые задачи про яблоки, геометрические фигуры (квадрат, треугольник).
-           - Биология: почему зебры полосатые, кто спит зимой, как дыхают рыбы.
-           - Астрономия: почему светит Луна, сколько планет (без ухода только в Юпитер!), что такое звезда.
-           - География: самый большой океан, где живут пингвины, материки.
-           - История: рыцари и замки, как изобрели колесо, древние пирамиды.
+        ТРЕБОВАНИЯ К ВОПРОСУ:
+        1. Уровень: 2-3 класс (8-9 лет). Понятный детский язык, увлекательный факт.
+        2. СТРОГО ЗАПРЕЩЕНО использовать банальные клише ("Какой самый большой океан", "Какая самая большая птица", "Какая самая большая планета"). Придумай нестандартный детский факт по подтеме "{chosen_subcategory}"!
+        3. ЯЗЫК: ТОЛЬКО 100% ЧИСТЫЙ РУССКИЙ ЯЗЫК! Никаких иностранных слов.
 
         ТРЕБОВАНИЯ К ФОРМАТУ (ТОЛЬКО ЧИСТЫЙ VALID JSON):
         {{
-            "question": "Интересный понятный вопрос на русском языке...",
+            "question": "Интересный вопрос на русском языке...",
             "options": ["Вариант 1", "Вариант 2", "Вариант 3", "Вариант 4"],
             "correctAnswer": "Точный текст правильного ответа",
             "explanation": "Короткое доброе объяснение (1-2 простые фразы)",
-            "topic": "Предмет",
-            "subcategory": "Понятная детская подтема"
+            "topic": "{chosen_topic}",
+            "subcategory": "{chosen_subcategory}"
         }}
         """
 
@@ -151,29 +199,29 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.6  # Снизили температуру для исключения языковых галлюцинаций
+            temperature=0.75
         )
 
         response_content = completion.choices[0].message.content
         question_data = json.loads(response_content)
         question_data["user_score"] = score
+        question_data["topic"] = chosen_topic
+        question_data["subcategory"] = chosen_subcategory
 
-        # Сохраняем сгенерированный вопрос в историю БД
-        full_q_title = f"{question_data.get('topic', '')} ({question_data.get('subcategory', '')}): {question_data.get('question', '')}"
-        recent_questions_list.append(full_q_title)
-        
-        # Храним только последние 30 вопросов
-        if len(recent_questions_list) > 30:
-            recent_questions_list = recent_questions_list[-30:]
+        # Сохраняем использованную подтему в PostgreSQL
+        used_pair = f"{chosen_topic}: {chosen_subcategory}"
+        recent_subtopics_list.append(used_pair)
+        if len(recent_subtopics_list) > 30:
+            recent_subtopics_list = recent_subtopics_list[-30:]
 
         conn = get_db_connection()
         if conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE child_profiles 
-                    SET recent_questions = %s 
+                    SET recent_subtopics = %s 
                     WHERE LOWER(user_name) = LOWER(%s)
-                """, (json.dumps(recent_questions_list, ensure_ascii=False), user_name))
+                """, (json.dumps(recent_subtopics_list, ensure_ascii=False), user_name))
                 conn.commit()
             conn.close()
 
@@ -187,11 +235,11 @@ async def get_question(request: Request):
             "correctAnswer": "8",
             "explanation": "У каждого котика по 4 лапки: 4 + 4 = 8!",
             "topic": "Математика",
-            "subcategory": "Сложение",
+            "subcategory": "Простые задачки на сложение и вычитание",
             "user_score": 0
         }
 
-# --- 2. РУЧКА СОХРАНЕНИЯ РЕЗУЛЬТАТА И ОШИБОК В NEON ---
+# --- 2. РУЧКА СОХРАНЕНИЯ РЕЗУЛЬТАТА В NEON ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
@@ -266,8 +314,8 @@ async def chat_with_robot(request: Request):
             return {"reply": "Ты ничего не написал! Попробуй еще раз."}
 
         system_prompt = f"""
-        Ты — Профессор Фил, мудрый, добрый и увлечённый сова-наставник для ребёнка {user_name} (8-9 лет).
-        Отвечай коротко (1-3 предложения), тепло, понятным языком, стимулируй любознательность и используй простые эмодзи.
+        Ты — Профессор Фил, мудрый, добрый сова-наставник для ребёнка {user_name} (8-9 лет).
+        Отвечай коротко (1-3 предложения), тепло, понятным языком, используй простые эмодзи.
         """
 
         messages_for_ai = [{"role": "system", "content": system_prompt}]
@@ -276,7 +324,7 @@ async def chat_with_robot(request: Request):
 
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": messages_for_ai}],
+            messages=messages_for_ai,
             temperature=0.7,
             max_tokens=300
         )
