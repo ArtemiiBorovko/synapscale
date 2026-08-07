@@ -4,6 +4,8 @@ let chatHistory = [];
 let isAudioMuted = false;
 let lastBotText = "";
 let currentTopic = "";
+let currentQuestionIndex = 0; // Счётчик вопросов в блоке
+const MAX_QUESTIONS_PER_BLOCK = 10;
 
 window.onload = () => {
     const savedName = localStorage.getItem('studentName');
@@ -37,10 +39,10 @@ function goBack() {
 
 function startLesson() {
     document.getElementById('start-btn').style.display = 'none';
+    currentQuestionIndex = 0;
     loadQuestionFromAI();
 }
 
-// Загрузка живого вопроса из ИИ + Neon DB
 async function loadQuestionFromAI() {
     const qBox = document.getElementById('question-text');
     const optBox = document.getElementById('options-container');
@@ -50,7 +52,24 @@ async function loadQuestionFromAI() {
     feedback.className = "feedback hidden";
     nextBtn.classList.add('hidden');
     
-    qBox.innerText = "🦉 Профессор Фил придумывает вопрос...";
+    currentQuestionIndex++;
+
+    // Если блок из 10 вопросов пройден — подводим итоги
+    if (currentQuestionIndex > MAX_QUESTIONS_PER_BLOCK) {
+        qBox.innerText = `🏆 Блок из 10 вопросов пройден! Ты набрал ${score} очков. Молодец, ${userName}!`;
+        optBox.innerHTML = "";
+        nextBtn.innerText = "🔄 Начать новый блок из 10 вопросов";
+        nextBtn.onclick = () => {
+            currentQuestionIndex = 0;
+            nextBtn.innerText = "➡️ Следующий вопрос";
+            nextBtn.onclick = nextQuestion;
+            loadQuestionFromAI();
+        };
+        nextBtn.classList.remove('hidden');
+        return;
+    }
+
+    qBox.innerText = `🦉 [Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] Профессор Фил придумывает вопрос...`;
     optBox.innerHTML = "";
 
     try {
@@ -62,12 +81,14 @@ async function loadQuestionFromAI() {
         
         const data = await response.json();
         
-        // Обновляем очки из базы данных
-        score = data.user_score;
-        updateScore();
+        // Синхронизируем базовые очки из БД только на первом вопросе блока
+        if (currentQuestionIndex === 1 && data.user_score !== undefined) {
+            score = data.user_score;
+            updateScore();
+        }
         
-        currentTopic = data.topic;
-        qBox.innerText = `[${data.topic}] ${data.question}`;
+        currentTopic = data.topic || "Общие знания";
+        qBox.innerText = `[Вопрос ${currentQuestionIndex}/${MAX_QUESTIONS_PER_BLOCK}] (${currentTopic}): ${data.question}`;
         
         optBox.innerHTML = "";
         data.options.forEach(option => {
@@ -88,12 +109,17 @@ async function checkAnswer(selected, correct, explanation) {
     const optBox = document.getElementById('options-container');
     const nextBtn = document.getElementById('next-btn');
 
-    const isCorrect = (selected === correct);
+    // Очищаем пробелы и регистр для точного сравнения
+    const cleanSelected = String(selected).trim().toLowerCase();
+    const cleanCorrect = String(correct).trim().toLowerCase();
+    const isCorrect = (cleanSelected === cleanCorrect);
 
-    // Блокируем кнопки после ответа
+    // Блокируем кнопки
     Array.from(optBox.children).forEach(btn => btn.disabled = true);
 
     if (isCorrect) {
+        score += 1;
+        updateScore();
         feedback.innerText = `✅ Правильно! ${explanation}`;
         feedback.className = "feedback success";
     } else {
@@ -104,9 +130,9 @@ async function checkAnswer(selected, correct, explanation) {
     feedback.classList.remove('hidden');
     nextBtn.classList.remove('hidden');
 
-    // Отправляем результат в Neon DB
+    // Сохраняем в Neon DB
     try {
-        const response = await fetch('/api/submit-answer', {
+        await fetch('/api/submit-answer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -115,13 +141,8 @@ async function checkAnswer(selected, correct, explanation) {
                 topic: currentTopic
             })
         });
-        const resData = await response.json();
-        if (resData.status === "ok") {
-            score = resData.score;
-            updateScore();
-        }
     } catch(e) {
-        console.log("Ошибка сохранения результата:", e);
+        console.log("Ошибка сохранения в базу:", e);
     }
 }
 
