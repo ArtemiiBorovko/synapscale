@@ -102,7 +102,9 @@ speakQuestionBtn.addEventListener("click", () => {
 
 // Обработка ответа
 async function handleAnswer(selectedBtn, selectedText) {
-    const isCorrect = String(selectedText).trim() === String(currentQuestionData.correctAnswer).trim();
+    const userAns = String(selectedText).trim().toLowerCase();
+    const correctAns = String(currentQuestionData.correctAnswer).trim().toLowerCase();
+    const isCorrect = userAns === correctAns;
     
     // Блокируем кнопки
     const allBtns = optionsContainer.querySelectorAll(".option-btn");
@@ -119,7 +121,7 @@ async function handleAnswer(selectedBtn, selectedText) {
         
         // Подсвечиваем правильный
         allBtns.forEach(b => {
-            if (b.textContent === currentQuestionData.correctAnswer) {
+            if (b.textContent.trim().toLowerCase() === correctAns) {
                 b.classList.add("correct");
             }
         });

@@ -246,12 +246,17 @@ async def get_question(request: Request):
         }
 
 # --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
+# --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
         data = await request.json()
         user_name = data.get("name", "").strip().lower()
+        
         is_correct = data.get("is_correct")
+        if isinstance(is_correct, str):
+            is_correct = is_correct.lower() in ("true", "1", "yes")
+            
         topic = data.get("topic", "Общие знания")
         subcategory = data.get("subcategory", "Разное")
 
