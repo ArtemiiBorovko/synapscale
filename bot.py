@@ -78,7 +78,6 @@ def init_db():
                     recent_questions TEXT DEFAULT '[]'
                 );
             """)
-            # Добавляем колонку для защиты от одинаковых текстов вопросов
             cur.execute("""
                 ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_questions TEXT DEFAULT '[]';
             """)
@@ -99,7 +98,7 @@ async def get_script():
 async def get_style():
     return FileResponse("style.css")
 
-# --- 1. РУЧКА ГЕНЕРАЦИИ ИИ-ВОПРОСА ---
+# --- 1. ГЕНЕРАЦИЯ ВОПРОСА С ЗАЩИТОЙ ОТ ПОВТОРОВ ---
 @app.post("/api/get-question")
 async def get_question(request: Request):
     try:
@@ -114,10 +113,15 @@ async def get_question(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Используем LOWER для надежного поиска по имени
                 cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
-                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_subtopics, recent_questions) VALUES (%s, '{}', '[]', '[]')", (user_name,))
+                    cur.execute("""
+                        INSERT INTO child_profiles (user_name, score, total_questions, weak_topics, recent_subtopics, recent_questions) 
+                        VALUES (%s, 0, 0, '{}', '[]', '[]')
+                        ON CONFLICT (user_name) DO NOTHING
+                    """, (user_name,))
                     conn.commit()
                 else:
                     score = user_data["score"]
@@ -135,7 +139,7 @@ async def get_question(request: Request):
                         recent_questions_list = []
             conn.close()
 
-        # Выбор подтемы
+        # Выбор подтемы с учетом слабых мест
         active_weak = [k for k, v in weak_dict.items() if v > 0 and k not in recent_subtopics_list[-3:]]
         
         if active_weak and random.random() < 0.3:
@@ -158,13 +162,19 @@ async def get_question(request: Request):
 
             chosen_topic, chosen_subcategory = random.choice(available_pairs)
 
+        # Передаем список запрещенных вопросов прямо в промпт модели
+        forbidden_questions_text = "\n".join([f"- {q}" for q in recent_questions_list[-15:]])
+
         system_prompt = f"""
         Ты — профессор Фил, добрый учитель для ребёнка 6 лет. Имя ученика: {user_name}.
         
         ЗАДАЧА:
         Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос по теме: "{chosen_topic}" (подтема: "{chosen_subcategory}").
         
-        ВАЖНО: Придумай уникальный вопрос, которого не было в прошлых раундах. Никаких повторов!
+        КРИТИЧЕСКИ ВАЖНО (ЗАПРЕТ НА ПОВТОРЫ):
+        Ни в коем случае не создавай вопросы, которые уже были в этом списке запрещенных вопросов:
+        {forbidden_questions_text}
+        Придумай абсолютно новый, уникальный вопрос!
 
         ЖЕСТКИЕ ПРАВИЛА:
         1. ЯЗЫК: ТОЛЬКО 100% русский язык.
@@ -187,37 +197,27 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.5 # Чуть выше температура для разнообразия вопросов
+            temperature=0.7
         )
 
         response_content = completion.choices[0].message.content
         question_data = json.loads(response_content)
         question_text = question_data.get("question", "")
 
-        # Если сгенерировался точно такой же текст вопроса, что был недавно — делаем вторую попытку принудительно
-        if question_text in recent_questions_list:
-            completion = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": system_prompt + "\nПРЕДУПРЕЖДЕНИЕ: Этот вопрос уже был! Придумай абсолютно другой вопрос!"}],
-                response_format={"type": "json_object"},
-                temperature=0.8
-            )
-            question_data = json.loads(completion.choices[0].message.content)
-            question_text = question_data.get("question", "")
-
         question_data["user_score"] = score
         question_data["topic"] = chosen_topic
         question_data["subcategory"] = chosen_subcategory
 
-        # Сохраняем в списки истории
+        # Обновляем списки истории
         used_pair = f"{chosen_topic}: {chosen_subcategory}"
         recent_subtopics_list.append(used_pair)
         if len(recent_subtopics_list) > 25:
             recent_subtopics_list = recent_subtopics_list[-25:]
 
-        recent_questions_list.append(question_text)
-        if len(recent_questions_list) > 15:
-            recent_questions_list = recent_questions_list[-15:]
+        if question_text:
+            recent_questions_list.append(question_text)
+            if len(recent_questions_list) > 20:
+                recent_questions_list = recent_questions_list[-20:]
 
         conn = get_db_connection()
         if conn:
@@ -248,7 +248,7 @@ async def get_question(request: Request):
             "user_score": 0
         }
 
-# --- 2. РУЧКА СОХРАНЕНИЯ РЕЗУЛЬТАТА В NEON ---
+# --- 2. НАДЕЖНОЕ СОХРАНЕНИЕ ОЧКОВ ЧЕРЕЗ UPSERT ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
@@ -267,6 +267,7 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Сначала достаем текущие слабые места
                 cur.execute("SELECT weak_topics FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 row = cur.fetchone()
                 
@@ -287,19 +288,19 @@ async def submit_answer(request: Request):
 
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
 
-                # Выполняем UPDATE и сразу получаем обновленный счетчик
-                if is_correct:
-                    cur.execute("""
-                        UPDATE child_profiles 
-                        SET score = COALESCE(score, 0) + 1, total_questions = COALESCE(total_questions, 0) + 1, weak_topics = %s
-                        WHERE LOWER(user_name) = LOWER(%s) RETURNING score
-                    """, (new_weak_topics_str, user_name))
-                else:
-                    cur.execute("""
-                        UPDATE child_profiles 
-                        SET total_questions = COALESCE(total_questions, 0) + 1, weak_topics = %s
-                        WHERE LOWER(user_name) = LOWER(%s) RETURNING score
-                    """, (new_weak_topics_str, user_name))
+                # Используем UPSERT (INSERT ... ON CONFLICT), чтобы профиль гарантированно создавался или обновлялся
+                score_increment = 1 if is_correct else 0
+                
+                cur.execute("""
+                    INSERT INTO child_profiles (user_name, score, total_questions, weak_topics, recent_subtopics, recent_questions)
+                    VALUES (%s, %s, 1, %s, '[]', '[]')
+                    ON CONFLICT (user_name) 
+                    DO UPDATE SET 
+                        score = child_profiles.score + %s,
+                        total_questions = COALESCE(child_profiles.total_questions, 0) + 1,
+                        weak_topics = %s
+                    RETURNING score;
+                """, (user_name, score_increment, new_weak_topics_str, score_increment, new_weak_topics_str))
                 
                 updated_row = cur.fetchone()
                 if updated_row:
@@ -312,7 +313,7 @@ async def submit_answer(request: Request):
         print("Ошибка сохранения в базу:", e)
         return {"status": "error", "message": str(e)}
 
-# --- 3. РУЧКА ОБУЧАЮЩЕГО ЧАТА ---
+# --- 3. ОБУЧАЮЩИЙ ЧАТ ---
 @app.post("/api/chat")
 async def chat_with_robot(request: Request):
     try:
