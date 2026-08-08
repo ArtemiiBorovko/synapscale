@@ -101,11 +101,19 @@ speakQuestionBtn.addEventListener("click", () => {
 });
 
 // Обработка ответа
+// Обработка ответа
 async function handleAnswer(selectedBtn, selectedText) {
+    // Очищаем строки от пробелов и приводим к нижнему регистру для надежности
     const userAns = String(selectedText).trim().toLowerCase();
     const correctAns = String(currentQuestionData.correctAnswer).trim().toLowerCase();
     const isCorrect = userAns === correctAns;
     
+    console.log("Сравнение ответов:", { 
+        нажато: `"${userAns}"`, 
+        правильно: `"${correctAns}"`, 
+        итог: isCorrect 
+    });
+
     // Блокируем кнопки
     const allBtns = optionsContainer.querySelectorAll(".option-btn");
     allBtns.forEach(b => b.disabled = true);
@@ -119,7 +127,7 @@ async function handleAnswer(selectedBtn, selectedText) {
         feedbackContainer.textContent = `Не совсем. Правильный ответ: ${currentQuestionData.correctAnswer}. ${currentQuestionData.explanation}`;
         feedbackContainer.className = "feedback error";
         
-        // Подсвечиваем правильный
+        // Подсвечиваем правильный вариант
         allBtns.forEach(b => {
             if (b.textContent.trim().toLowerCase() === correctAns) {
                 b.classList.add("correct");
@@ -143,6 +151,8 @@ async function handleAnswer(selectedBtn, selectedText) {
             })
         });
         const data = await res.json();
+        console.log("Ответ сервера на сохранение очков:", data);
+        
         const newScore = data.score !== undefined ? data.score : data.user_score;
         if (newScore !== undefined) {
             scoreDisplay.textContent = newScore;
