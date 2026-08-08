@@ -141,8 +141,9 @@ async function handleAnswer(selectedBtn, selectedText) {
             })
         });
         const data = await res.json();
-        if (data.score !== undefined) {
-            scoreDisplay.textContent = data.score;
+        const newScore = data.score !== undefined ? data.score : data.user_score;
+        if (newScore !== undefined) {
+            scoreDisplay.textContent = newScore;
         }
     } catch (e) {
         console.error("Ошибка сохранения:", e);
