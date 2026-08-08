@@ -84,6 +84,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Добавь эти 3 строчки: */
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
 }
 
 .icon-btn:hover {

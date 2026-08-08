@@ -133,8 +133,11 @@ async def get_question(request: Request):
         chosen_topic = None
         chosen_subcategory = None
 
-        active_weak = [k for k, v in weak_dict.items() if v > 0]
-        if active_weak:
+        # Исключаем темы, которые были буквально только что (в последних 3 вопросах)
+        active_weak = [k for k, v in weak_dict.items() if v > 0 and k not in recent_subtopics_list[-3:]]
+        
+        # Даем шанс 30% на появление "работы над ошибками", чтобы не зацикливать бота
+        if active_weak and random.random() < 0.3:
             weak_key = random.choice(active_weak)
             parts = weak_key.split(": ")
             chosen_topic = parts[0]
@@ -270,13 +273,13 @@ async def submit_answer(request: Request):
                 if is_correct:
                     cur.execute("""
                         UPDATE child_profiles 
-                        SET score = score + 1, total_questions = total_questions + 1, weak_topics = %s
+                        SET score = COALESCE(score, 0) + 1, total_questions = COALESCE(total_questions, 0) + 1, weak_topics = %s
                         WHERE LOWER(user_name) = LOWER(%s) RETURNING score
                     """, (new_weak_topics_str, user_name))
                 else:
                     cur.execute("""
                         UPDATE child_profiles 
-                        SET total_questions = total_questions + 1, weak_topics = %s
+                        SET total_questions = COALESCE(total_questions, 0) + 1, weak_topics = %s
                         WHERE LOWER(user_name) = LOWER(%s) RETURNING score
                     """, (new_weak_topics_str, user_name))
                 
