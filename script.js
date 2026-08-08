@@ -3,6 +3,8 @@ const BACKEND_URL = "";
 let currentUserName = "";
 let currentQuestionData = null;
 let chatHistory = [];
+let currentQuestionIndex = 0; // Счётчик вопросов в текущем блоке (до 10)
+const BLOCK_SIZE = 10;
 
 // DOM Элементы
 const welcomeScreen = document.getElementById("welcome-screen");
@@ -14,11 +16,15 @@ const scoreDisplay = document.getElementById("score");
 const themeToggle = document.getElementById("theme-toggle");
 
 const questionTopic = document.getElementById("question-topic");
+const questionProgress = document.getElementById("question-progress");
 const questionText = document.getElementById("question-text");
 const optionsContainer = document.getElementById("options-container");
 const feedbackContainer = document.getElementById("feedback-container");
 const nextBtn = document.getElementById("next-btn");
 const speakQuestionBtn = document.getElementById("speak-question-btn");
+const quizCard = document.querySelector(".quiz-card");
+const completionCard = document.getElementById("completion-card");
+const restartBlockBtn = document.getElementById("restart-block-btn");
 
 const chatHistoryDiv = document.getElementById("chat-history");
 const chatInput = document.getElementById("chat-input");
@@ -32,7 +38,6 @@ window.onload = () => {
     }
 };
 
-// Инициализация темы
 function initTheme() {
     const savedTheme = localStorage.getItem("theme") || "dark";
     document.documentElement.setAttribute("data-theme", savedTheme);
@@ -47,7 +52,6 @@ themeToggle.addEventListener("click", () => {
 
 initTheme();
 
-// Старт приложения
 startBtn.addEventListener("click", () => {
     const name = userNameInput.value.trim();
     if (name) {
@@ -56,13 +60,25 @@ startBtn.addEventListener("click", () => {
         displayName.textContent = name;
         welcomeScreen.classList.add("hidden");
         appScreen.classList.remove("hidden");
+        currentQuestionIndex = 0;
         loadQuestion();
     }
 });
 
-// Загрузка вопроса
 async function loadQuestion() {
+    // Проверка лимита в 10 вопросов на блок
+    if (currentQuestionIndex >= BLOCK_SIZE) {
+        quizCard.classList.add("hidden");
+        completionCard.classList.remove("hidden");
+        document.getElementById("completion-stats").textContent = `Вы успешно завершили блок из ${BLOCK_SIZE} вопросов!`;
+        return;
+    }
+
+    quizCard.classList.remove("hidden");
+    completionCard.classList.add("hidden");
+
     questionTopic.textContent = "Анализируем прогресс...";
+    questionProgress.textContent = `Вопрос ${currentQuestionIndex + 1} из ${BLOCK_SIZE}`;
     questionText.textContent = "ИИ генерирует вопрос...";
     optionsContainer.innerHTML = "";
     feedbackContainer.classList.add("hidden");
@@ -79,6 +95,7 @@ async function loadQuestion() {
         scoreDisplay.textContent = currentQuestionData.user_score;
         
         questionTopic.textContent = `${currentQuestionData.topic} • ${currentQuestionData.subcategory}`;
+        questionProgress.textContent = `Вопрос ${currentQuestionIndex + 1} из ${BLOCK_SIZE}`;
         questionText.textContent = currentQuestionData.question;
 
         currentQuestionData.options.forEach(optionText => {
@@ -93,28 +110,22 @@ async function loadQuestion() {
     }
 }
 
-// Озвучка вопроса
+restartBlockBtn.addEventListener("click", () => {
+    currentQuestionIndex = 0;
+    loadQuestion();
+});
+
 speakQuestionBtn.addEventListener("click", () => {
     if (currentQuestionData && currentQuestionData.question) {
         speakText(currentQuestionData.question);
     }
 });
 
-// Обработка ответа
-// Обработка ответа
 async function handleAnswer(selectedBtn, selectedText) {
-    // Очищаем строки от пробелов и приводим к нижнему регистру для надежности
     const userAns = String(selectedText).trim().toLowerCase();
     const correctAns = String(currentQuestionData.correctAnswer).trim().toLowerCase();
     const isCorrect = userAns === correctAns;
-    
-    console.log("Сравнение ответов:", { 
-        нажато: `"${userAns}"`, 
-        правильно: `"${correctAns}"`, 
-        итог: isCorrect 
-    });
 
-    // Блокируем кнопки
     const allBtns = optionsContainer.querySelectorAll(".option-btn");
     allBtns.forEach(b => b.disabled = true);
 
@@ -127,7 +138,6 @@ async function handleAnswer(selectedBtn, selectedText) {
         feedbackContainer.textContent = `Не совсем. Правильный ответ: ${currentQuestionData.correctAnswer}. ${currentQuestionData.explanation}`;
         feedbackContainer.className = "feedback error";
         
-        // Подсвечиваем правильный вариант
         allBtns.forEach(b => {
             if (b.textContent.trim().toLowerCase() === correctAns) {
                 b.classList.add("correct");
@@ -138,7 +148,6 @@ async function handleAnswer(selectedBtn, selectedText) {
     feedbackContainer.classList.remove("hidden");
     nextBtn.classList.remove("hidden");
 
-    // Отправляем результат на бэкенд
     try {
         const res = await fetch(`${BACKEND_URL}/api/submit-answer`, {
             method: "POST",
@@ -151,8 +160,6 @@ async function handleAnswer(selectedBtn, selectedText) {
             })
         });
         const data = await res.json();
-        console.log("Ответ сервера на сохранение очков:", data);
-        
         const newScore = data.score !== undefined ? data.score : data.user_score;
         if (newScore !== undefined) {
             scoreDisplay.textContent = newScore;
@@ -162,9 +169,11 @@ async function handleAnswer(selectedBtn, selectedText) {
     }
 }
 
-nextBtn.addEventListener("click", loadQuestion);
+nextBtn.addEventListener("click", () => {
+    currentQuestionIndex++;
+    loadQuestion();
+});
 
-// Чат с ИИ
 sendBtn.addEventListener("click", sendMessage);
 chatInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") sendMessage();
@@ -190,7 +199,6 @@ async function sendMessage() {
         
         aiMsgDiv.innerHTML = data.reply;
         
-        // Добавляем кнопку озвучки ответа ИИ
         const speakBtn = document.createElement("button");
         speakBtn.className = "speak-btn";
         speakBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
@@ -212,41 +220,72 @@ function appendMessage(text, sender) {
     return div;
 }
 
-// Web Speech API (Распознавание)
+// Управление микрофоном (запись идет до повторного нажатия кнопки)
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRecognition) {
     const recognition = new SpeechRecognition();
     recognition.lang = 'ru-RU';
-    
+    recognition.continuous = true; // Не прерываться при паузах
+    recognition.interimResults = true; // Показывать промежуточные результаты
+
+    let isRecording = false;
+    let finalTranscript = '';
+
     voiceBtn.addEventListener("click", () => {
-        voiceBtn.style.color = "var(--danger)";
-        recognition.start();
+        if (!isRecording) {
+            // Старт записи
+            finalTranscript = chatInput.value ? chatInput.value + ' ' : '';
+            try {
+                recognition.start();
+            } catch(e) {}
+        } else {
+            // Остановка записи вручную
+            try {
+                recognition.stop();
+            } catch(e) {}
+        }
     });
 
+    recognition.onstart = () => {
+        isRecording = true;
+        voiceBtn.classList.add("recording");
+    };
+
     recognition.onresult = (event) => {
-        chatInput.value = event.results[0][0].transcript;
-        voiceBtn.style.color = "";
-        sendMessage();
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript + ' ';
+            } else {
+                interim += event.results[i][0].transcript;
+            }
+        }
+        chatInput.value = (finalTranscript + interim).trim();
     };
 
     recognition.onerror = () => {
-        voiceBtn.style.color = "";
+        stopRecordingState();
     };
+
+    recognition.onend = () => {
+        stopRecordingState();
+    };
+
+    function stopRecordingState() {
+        isRecording = false;
+        voiceBtn.classList.remove("recording");
+    }
 } else {
     voiceBtn.style.display = "none";
 }
 
-// Озвучка текста без эмодзи (Синтез)
 function speakText(text) {
     if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Остановить предыдущую озвучку
-        
-        // Убираем эмодзи из текста перед озвучкой, чтобы голос их не читал
+        window.speechSynthesis.cancel();
         const cleanText = text.replace(/[\u{1F000}-\u{1FAFF}]|[\u{2600}-\u{27BF}]/gu, "").trim();
-        
         const utterance = new SpeechSynthesisUtterance(cleanText);
         utterance.lang = 'ru-RU';
-        utterance.rate = 0.9; // Чуть медленнее для ребенка
-        window.speechSynthesis.speak(utterance);
+        utterance.rate = 0.9;
+        window.speechSynthesis.spend = window.speechSynthesis.speak(utterance);
     }
 }

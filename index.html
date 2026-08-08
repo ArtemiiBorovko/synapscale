@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Обучение</title>
+    <!-- Логотип (Фавикон) во вкладке браузера -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='3'></circle><ellipse cx='12' cy='12' rx='10' ry='4' transform='rotate(45 12 12)'></ellipse><ellipse cx='12' cy='12' rx='10' ry='4' transform='rotate(-45 12 12)'></ellipse></svg>">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -11,12 +13,12 @@
 
     <header class="app-header">
         <div class="logo-container">
-                <!-- Стильный SVG Логотип Атома/Нейросети -->
-                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(45 12 12)"></ellipse>
-                    <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-45 12 12)"></ellipse>
-                </svg>
+            <!-- Стильный SVG Логотип Атома/Нейросети -->
+            <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(45 12 12)"></ellipse>
+                <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-45 12 12)"></ellipse>
+            </svg>
             <h1>AI Academy</h1>
         </div>
         <button id="theme-toggle" class="icon-btn" aria-label="Переключить тему">
@@ -46,7 +48,10 @@
 
             <!-- Блок с вопросом -->
             <div class="card quiz-card">
-                <div class="topic-label" id="question-topic">Загрузка темы...</div>
+                <div class="quiz-top-info">
+                    <div class="topic-label" id="question-topic">Загрузка темы...</div>
+                    <div class="badge progress-badge" id="question-progress">Вопрос 1 из 10</div>
+                </div>
                 
                 <div class="question-header">
                     <h3 id="question-text">Готовим вопрос...</h3>
@@ -61,6 +66,13 @@
                 <button id="next-btn" class="primary-btn hidden">Следующий вопрос</button>
             </div>
 
+            <!-- Экран завершения блока (10 вопросов) -->
+            <div id="completion-card" class="card hidden" style="text-align: center; padding: 40px 20px;">
+                <h2>Блок завершен! 🎉</h2>
+                <p class="subtitle" id="completion-stats">Вы ответили на 10 вопросов.</p>
+                <button id="restart-block-btn" class="primary-btn" style="max-width: 300px; margin: 0 auto;">Следующий блок</button>
+            </div>
+
             <!-- Блок чата -->
             <div class="card chat-card">
                 <div class="chat-header">
@@ -70,7 +82,7 @@
                 <div id="chat-history" class="chat-history"></div>
                 
                 <div class="chat-input-area">
-                    <button id="voice-btn" class="icon-btn voice-btn">
+                    <button id="voice-btn" class="icon-btn voice-btn" title="Голосовой ввод (нажмите для старта и стопа)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                     </button>
                     <input type="text" id="chat-input" placeholder="Задайте вопрос...">

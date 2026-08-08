@@ -1,5 +1,4 @@
 :root {
-    /* Светлая тема */
     --bg-color: #f1f5f9;
     --text-color: #0f172a;
     --text-muted: #64748b;
@@ -14,12 +13,11 @@
 }
 
 [data-theme="dark"] {
-    /* Темная корпоративная/неоновая тема */
     --bg-color: #0f172a;
     --text-color: #f8fafc;
     --text-muted: #94a3b8;
     --card-bg: #1e293b;
-    --primary: #6366f1; /* Неоновый индиго */
+    --primary: #6366f1;
     --primary-hover: #4f46e5;
     --success: #10b981;
     --danger: #ef4444;
@@ -45,7 +43,6 @@ body {
     flex-direction: column;
 }
 
-/* Header */
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -72,7 +69,6 @@ body {
     font-weight: 600;
 }
 
-/* Theme Toggle */
 .icon-btn {
     background: none;
     border: none;
@@ -84,7 +80,6 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    /* Добавь эти 3 строчки: */
     flex-shrink: 0;
     width: 44px;
     height: 44px;
@@ -103,7 +98,6 @@ body {
 [data-theme="dark"] .moon-icon { display: none; }
 [data-theme="light"] .sun-icon { display: none; }
 
-/* Layout */
 .container {
     max-width: 800px;
     margin: 2rem auto;
@@ -112,7 +106,7 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    flex: 1; /* Заставляет контейнер растянуться на всю высоту и отцентрировать контент */
+    flex: 1;
 }
 
 .card {
@@ -126,10 +120,9 @@ body {
 #app-screen {
     display: flex;
     flex-direction: column;
-    gap: 24px; /* Идеальное расстояние между блоками, исключающее наезжание */
+    gap: 24px;
 }
 
-/* Typography & Inputs */
 h2, h3 { font-weight: 600; margin-bottom: 8px; }
 .subtitle { color: var(--text-muted); margin-bottom: 20px; }
 
@@ -149,7 +142,6 @@ input[type="text"]:focus {
     border-color: var(--primary);
 }
 
-/* Buttons (No Box Shadow, Flat UI) */
 .primary-btn {
     display: flex;
     align-items: center;
@@ -182,7 +174,6 @@ input[type="text"]:focus {
     cursor: not-allowed;
 }
 
-/* Quiz UI */
 .stats-bar {
     display: flex;
     justify-content: flex-end;
@@ -204,13 +195,25 @@ input[type="text"]:focus {
     border: none;
 }
 
+.quiz-top-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
 .topic-label {
     font-size: 0.875rem;
     color: var(--primary);
     font-weight: 600;
-    margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.progress-badge {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background-color: var(--input-bg);
 }
 
 .question-header {
@@ -286,7 +289,6 @@ input[type="text"]:focus {
     border: 1px solid var(--danger);
 }
 
-/* Chat UI */
 .chat-header {
     display: flex;
     align-items: center;
@@ -310,7 +312,6 @@ input[type="text"]:focus {
     padding-right: 8px;
 }
 
-/* Скроллбар */
 .chat-history::-webkit-scrollbar { width: 6px; }
 .chat-history::-webkit-scrollbar-track { background: transparent; }
 .chat-history::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
@@ -370,6 +371,20 @@ input[type="text"]:focus {
 .voice-btn {
     background-color: var(--input-bg);
     border: 1px solid var(--border-color);
+}
+
+/* Анимация пульсации при активной записи голоса */
+.voice-btn.recording {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-color: var(--danger);
+    color: var(--danger);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+    100% { transform: scale(1); }
 }
 
 .hidden { display: none !important; }

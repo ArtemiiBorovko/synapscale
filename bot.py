@@ -98,12 +98,10 @@ async def get_script():
 async def get_style():
     return FileResponse("style.css")
 
-# --- 1. ГЕНЕРАЦИЯ ВОПРОСА С ЖЕСТКИМ ФИЛЬТРОМ ПОВТОРОВ ---
 @app.post("/api/get-question")
 async def get_question(request: Request):
     try:
         data = await request.json()
-        # Нормализуем имя (убираем пробелы и приводим к нижнему регистру для базы)
         user_name = data.get("name", "Друг").strip().lower()
         display_name = data.get("name", "Друг").strip()
 
@@ -170,16 +168,18 @@ async def get_question(request: Request):
         ЗАДАЧА:
         Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос по теме: "{chosen_topic}" (подтема: "{chosen_subcategory}").
         
+        КРИТИЧЕСКИ ВАЖНО (ФАКТОЛОГИЧЕСКАЯ ТОЧНОСТЬ И ЛОГИКА):
+        1. Вопрос и варианты ответов должны быть абсолютно логичными и правдивыми с точки зрения реального мира (никаких перепутанных форм фруктов, неверных вычислений или абсурдных утверждений).
+        2. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать любые иероглифы, китайские, японские или другие нерусские символы в поле объяснения или ответах! Весь текст должен быть исключительно на чистом русском языке (кириллица).
+
         КРИТИЧЕСКИ ВАЖНО (ЗАПРЕТ НА ПОВТОРЫ):
         Ни в коем случае не создавай вопросы, которые уже есть в списке запрещенных ниже:
         {forbidden_questions_text}
-        Придумай абсолютно новый, уникальный вопрос!
 
         ЖЕСТКИЕ ПРАВИЛА:
-        1. ЯЗЫК: ТОЛЬКО 100% русский язык.
-        2. ВОЗРАСТ 6 ЛЕТ: Вопросы житейские и понятные.
-        3. МАТЕМАТИКА: Если это математика — ТОЛЬКО одно действие (до 10).
-        4. ПРОВЕРКА: Правильный ответ ОБЯЗАТЕЛЬНО должен быть среди массива "options".
+        1. Возраст 6 лет: Вопросы житейские и понятные.
+        2. Математика: Если это математика — ТОЛЬКО одно простое действие (до 10).
+        3. Проверка: Правильный ответ ОБЯЗАТЕЛЬНО должен в точности содержаться в массиве "options".
 
         ТРЕБОВАНИЯ К ФОРМАТУ (ТОЛЬКО ЧИСТЫЙ VALID JSON):
         {{
@@ -196,7 +196,7 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.8
+            temperature=0.5 # Снижено для повышения логичности и уменьшения галлюцинаций
         )
 
         question_data = json.loads(completion.choices[0].message.content)
@@ -245,17 +245,12 @@ async def get_question(request: Request):
             "user_score": 0
         }
 
-# --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
         data = await request.json()
-        print("\n--- ОТЛАДКА СОХРАНЕНИЯ ОТВЕТА ---")
-        print("Получено от фронтенда:", data)
-        
         user_name = data.get("name", "").strip().lower()
         is_correct = data.get("is_correct")
-        print(f"is_correct: {is_correct} (тип: {type(is_correct)})")
         
         if isinstance(is_correct, str):
             is_correct = is_correct.lower() in ("true", "1", "yes")
@@ -272,10 +267,8 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Проверим, что сейчас в базе для этого юзера
                 cur.execute("SELECT score, weak_topics FROM child_profiles WHERE user_name = %s", (user_name,))
                 row = cur.fetchone()
-                print("Текущая запись в БД до обновления:", row)
                 
                 weak_dict = {}
                 if row and row["weak_topics"]:
@@ -294,9 +287,7 @@ async def submit_answer(request: Request):
 
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
                 score_increment = 1 if is_correct else 0
-                print(f"Прибавка к очкам (score_increment): {score_increment}")
                 
-                # Используем COALESCE чтобы избежать проблем с NULL в базе
                 cur.execute("""
                     INSERT INTO child_profiles (user_name, score, total_questions, weak_topics, recent_subtopics, recent_questions)
                     VALUES (%s, %s, 1, %s, '[]', '[]')
@@ -309,21 +300,16 @@ async def submit_answer(request: Request):
                 """, (user_name, score_increment, new_weak_topics_str, score_increment, new_weak_topics_str))
                 
                 updated_row = cur.fetchone()
-                print("Строка после выполнения SQL (RETURNING):", updated_row)
-                
                 if updated_row and updated_row["score"] is not None:
                     new_score = updated_row["score"]
                 conn.commit()
             conn.close()
 
-        print(правляющий_текст := f"Итоговый счетец для отправки на фронт: {new_score}")
-        print("-----------------------------------")
         return {"status": "ok", "score": new_score}
     except Exception as e:
         print("Ошибка сохранения в базу:", e)
         return {"status": "error", "message": str(e)}
 
-# --- 3. ЧАТ С ИИ ---
 @app.post("/api/chat")
 async def chat_with_robot(request: Request):
     try:
@@ -337,7 +323,7 @@ async def chat_with_robot(request: Request):
         system_prompt = f"""
         Ты — Профессор Фил, добрый наставник для ребёнка 6 лет. Имя ученика: {user_name}.
         Отвечай коротко (1-3 предложения), тепло, используй очень простой детский язык и эмодзи.
-        СТРОГО ЗАПРЕЩЕНО использовать любые языки кроме русского.
+        СТРОГО ЗАПРЕЩЕНО использовать любые языки кроме русского и любые иероглифы.
         """
 
         messages_for_ai = [{"role": "system", "content": system_prompt}]
