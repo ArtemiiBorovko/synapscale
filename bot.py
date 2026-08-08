@@ -195,7 +195,7 @@ async def get_question(request: Request):
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
             temperature=0.8
-        ]
+        )
 
         question_data = json.loads(completion.choices[0].message.content)
         question_text = question_data.get("question", "")
