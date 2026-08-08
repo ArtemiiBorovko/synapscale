@@ -23,8 +23,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-# БАЗА ПРЕДМЕТОВ РАСШИРЕНА ДО 40 УНИКАЛЬНЫХ ТЕМ, ЧТОБЫ ИСКЛЮЧИТЬ ПОВТОРЫ
-# Названия очищены от "подсказок", чтобы в UI не было спойлеров.
 TOPICS_POOL = {
     "Математика": [
         "Сложение яблок (до 5)", "Сложение игрушек (до 10)",
@@ -58,6 +56,7 @@ TOPICS_POOL = {
 
 def get_db_connection():
     if not DATABASE_URL:
+        print("ВНИМАНИЕ: DATABASE_URL не задана!")
         return None
     try:
         return psycopg2.connect(DATABASE_URL)
@@ -75,11 +74,13 @@ def init_db():
                     score INT DEFAULT 0,
                     total_questions INT DEFAULT 0,
                     weak_topics TEXT DEFAULT '{}',
-                    recent_subtopics TEXT DEFAULT '[]'
+                    recent_subtopics TEXT DEFAULT '[]',
+                    recent_questions TEXT DEFAULT '[]'
                 );
             """)
+            # Добавляем колонку для защиты от одинаковых текстов вопросов
             cur.execute("""
-                ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_subtopics TEXT DEFAULT '[]';
+                ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS recent_questions TEXT DEFAULT '[]';
             """)
             conn.commit()
         conn.close()
@@ -108,6 +109,7 @@ async def get_question(request: Request):
         score = 0
         weak_dict = {}
         recent_subtopics_list = []
+        recent_questions_list = []
 
         conn = get_db_connection()
         if conn:
@@ -115,7 +117,7 @@ async def get_question(request: Request):
                 cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
-                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_subtopics) VALUES (%s, '{}', '[]')", (user_name,))
+                    cur.execute("INSERT INTO child_profiles (user_name, weak_topics, recent_subtopics, recent_questions) VALUES (%s, '{}', '[]', '[]')", (user_name,))
                     conn.commit()
                 else:
                     score = user_data["score"]
@@ -127,16 +129,15 @@ async def get_question(request: Request):
                         recent_subtopics_list = json.loads(user_data.get("recent_subtopics") or '[]')
                     except:
                         recent_subtopics_list = []
+                    try:
+                        recent_questions_list = json.loads(user_data.get("recent_questions") or '[]')
+                    except:
+                        recent_questions_list = []
             conn.close()
 
-        # Выбор подтемы с жестким фильтром (запоминаем последние 25 тем из 40 возможных)
-        chosen_topic = None
-        chosen_subcategory = None
-
-        # Исключаем темы, которые были буквально только что (в последних 3 вопросах)
+        # Выбор подтемы
         active_weak = [k for k, v in weak_dict.items() if v > 0 and k not in recent_subtopics_list[-3:]]
         
-        # Даем шанс 30% на появление "работы над ошибками", чтобы не зацикливать бота
         if active_weak and random.random() < 0.3:
             weak_key = random.choice(active_weak)
             parts = weak_key.split(": ")
@@ -147,7 +148,7 @@ async def get_question(request: Request):
             for topic, subtopics in TOPICS_POOL.items():
                 for sub in subtopics:
                     pair_str = f"{topic}: {sub}"
-                    if pair_str not in recent_subtopics_list[-25:]: 
+                    if pair_str not in recent_subtopics_list[-20:]: 
                         available_pairs.append((topic, sub))
 
             if not available_pairs:
@@ -157,24 +158,18 @@ async def get_question(request: Request):
 
             chosen_topic, chosen_subcategory = random.choice(available_pairs)
 
-        # Динамическое определение пола по имени и адаптация
         system_prompt = f"""
         Ты — профессор Фил, добрый учитель для ребёнка 6 лет. Имя ученика: {user_name}.
         
-        ВНИМАНИЕ (ГРАММАТИКА И ПОЛ): 
-        Определи пол по имени "{user_name}". Если это мужское имя (например, Артемий, Миша) — обращайся как к мальчику и в текстовых задачах используй мужской род ("у Артемия было", "он получил"). Если имя женское — используй женский род.
-
         ЗАДАЧА:
-        Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос.
-
-        ТЕМАТИКА:
-        - Предмет: {chosen_topic}
-        - Подтема: {chosen_subcategory}
+        Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос по теме: "{chosen_topic}" (подтема: "{chosen_subcategory}").
+        
+        ВАЖНО: Придумай уникальный вопрос, которого не было в прошлых раундах. Никаких повторов!
 
         ЖЕСТКИЕ ПРАВИЛА:
-        1. ЯЗЫК: ТОЛЬКО 100% русский язык. Никаких иностранных слов или иероглифов.
-        2. ВОЗРАСТ 6 ЛЕТ: Вопросы должны быть житейскими (Кто говорит "Мяу"? Какого цвета снег?).
-        3. МАТЕМАТИКА: В задачах ТОЛЬКО ОДНО действие (сложение или вычитание). Считать только до 10. Убедись, что правильный ответ вычислен без ошибок.
+        1. ЯЗЫК: ТОЛЬКО 100% русский язык.
+        2. ВОЗРАСТ 6 ЛЕТ: Вопросы житейские и понятные.
+        3. МАТЕМАТИКА: Если это математика — ТОЛЬКО одно действие (до 10).
         4. ПРОВЕРКА: Правильный ответ ОБЯЗАТЕЛЬНО должен быть среди массива "options".
 
         ТРЕБОВАНИЯ К ФОРМАТУ (ТОЛЬКО ЧИСТЫЙ VALID JSON):
@@ -192,28 +187,50 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.2 
+            temperature=0.5 # Чуть выше температура для разнообразия вопросов
         )
 
         response_content = completion.choices[0].message.content
         question_data = json.loads(response_content)
+        question_text = question_data.get("question", "")
+
+        # Если сгенерировался точно такой же текст вопроса, что был недавно — делаем вторую попытку принудительно
+        if question_text in recent_questions_list:
+            completion = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "system", "content": system_prompt + "\nПРЕДУПРЕЖДЕНИЕ: Этот вопрос уже был! Придумай абсолютно другой вопрос!"}],
+                response_format={"type": "json_object"},
+                temperature=0.8
+            )
+            question_data = json.loads(completion.choices[0].message.content)
+            question_text = question_data.get("question", "")
+
         question_data["user_score"] = score
         question_data["topic"] = chosen_topic
         question_data["subcategory"] = chosen_subcategory
 
+        # Сохраняем в списки истории
         used_pair = f"{chosen_topic}: {chosen_subcategory}"
         recent_subtopics_list.append(used_pair)
         if len(recent_subtopics_list) > 25:
             recent_subtopics_list = recent_subtopics_list[-25:]
+
+        recent_questions_list.append(question_text)
+        if len(recent_questions_list) > 15:
+            recent_questions_list = recent_questions_list[-15:]
 
         conn = get_db_connection()
         if conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE child_profiles 
-                    SET recent_subtopics = %s 
+                    SET recent_subtopics = %s, recent_questions = %s
                     WHERE LOWER(user_name) = LOWER(%s)
-                """, (json.dumps(recent_subtopics_list, ensure_ascii=False), user_name))
+                """, (
+                    json.dumps(recent_subtopics_list, ensure_ascii=False),
+                    json.dumps(recent_questions_list, ensure_ascii=False),
+                    user_name
+                ))
                 conn.commit()
             conn.close()
 
@@ -270,6 +287,7 @@ async def submit_answer(request: Request):
 
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
 
+                # Выполняем UPDATE и сразу получаем обновленный счетчик
                 if is_correct:
                     cur.execute("""
                         UPDATE child_profiles 
@@ -283,9 +301,9 @@ async def submit_answer(request: Request):
                         WHERE LOWER(user_name) = LOWER(%s) RETURNING score
                     """, (new_weak_topics_str, user_name))
                 
-                row = cur.fetchone()
-                if row:
-                    new_score = row["score"]
+                updated_row = cur.fetchone()
+                if updated_row:
+                    new_score = updated_row["score"]
                 conn.commit()
             conn.close()
 
@@ -307,7 +325,6 @@ async def chat_with_robot(request: Request):
 
         system_prompt = f"""
         Ты — Профессор Фил, добрый наставник для ребёнка 6 лет. Имя ученика: {user_name}.
-        Определи пол по имени и обращайся соответственно.
         Отвечай коротко (1-3 предложения), тепло, используй очень простой детский язык и эмодзи.
         СТРОГО ЗАПРЕЩЕНО использовать любые языки кроме русского.
         """
