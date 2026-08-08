@@ -52,7 +52,7 @@ startBtn.addEventListener("click", () => {
     const name = userNameInput.value.trim();
     if (name) {
         currentUserName = name;
-        localStorage.setItem('studentName', name); // Возвращаем сохранение
+        localStorage.setItem('studentName', name);
         displayName.textContent = name;
         welcomeScreen.classList.add("hidden");
         appScreen.classList.remove("hidden");
@@ -223,11 +223,15 @@ if (SpeechRecognition) {
     voiceBtn.style.display = "none";
 }
 
-// Озвучка текста (Синтез)
+// Озвучка текста без эмодзи (Синтез)
 function speakText(text) {
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel(); // Остановить предыдущую озвучку
-        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Убираем эмодзи из текста перед озвучкой, чтобы голос их не читал
+        const cleanText = text.replace(/[\u{1F000}-\u{1FAFF}]|[\u{2600}-\u{27BF}]/gu, "").trim();
+        
+        const utterance = new SpeechSynthesisUtterance(cleanText);
         utterance.lang = 'ru-RU';
         utterance.rate = 0.9; // Чуть медленнее для ребенка
         window.speechSynthesis.speak(utterance);

@@ -103,7 +103,9 @@ async def get_style():
 async def get_question(request: Request):
     try:
         data = await request.json()
-        user_name = data.get("name", "Друг").strip()
+        # Нормализуем имя (убираем пробелы и приводим к нижнему регистру для базы)
+        user_name = data.get("name", "Друг").strip().lower()
+        display_name = data.get("name", "Друг").strip()
 
         score = 0
         weak_dict = {}
@@ -113,7 +115,7 @@ async def get_question(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
+                cur.execute("SELECT * FROM child_profiles WHERE user_name = %s", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
                     cur.execute("""
@@ -160,10 +162,10 @@ async def get_question(request: Request):
 
             chosen_topic, chosen_subcategory = random.choice(available_pairs)
 
-        forbidden_questions_text = "\n".join([f"- {q}" for q in recent_questions_list[-20:]])
+        forbidden_questions_text = "\n".join([f"- {q}" for q in recent_questions_list[-25:]])
 
         system_prompt = f"""
-        Ты — профессор Фил, добрый учитель для ребёнка 6 лет. Имя ученика: {user_name}.
+        Ты — профессор Фил, добрый учитель для ребёнка 6 лет. Имя ученика: {display_name}.
         
         ЗАДАЧА:
         Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос по теме: "{chosen_topic}" (подтема: "{chosen_subcategory}").
@@ -220,7 +222,7 @@ async def get_question(request: Request):
                 cur.execute("""
                     UPDATE child_profiles 
                     SET recent_subtopics = %s, recent_questions = %s
-                    WHERE LOWER(user_name) = LOWER(%s)
+                    WHERE user_name = %s
                 """, (
                     json.dumps(recent_subtopics_list, ensure_ascii=False),
                     json.dumps(recent_questions_list, ensure_ascii=False),
@@ -248,7 +250,7 @@ async def get_question(request: Request):
 async def submit_answer(request: Request):
     try:
         data = await request.json()
-        user_name = data.get("name", "").strip()
+        user_name = data.get("name", "").strip().lower()
         is_correct = data.get("is_correct")
         topic = data.get("topic", "Общие знания")
         subcategory = data.get("subcategory", "Разное")
@@ -262,7 +264,7 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT weak_topics FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
+                cur.execute("SELECT weak_topics FROM child_profiles WHERE user_name = %s", (user_name,))
                 row = cur.fetchone()
                 
                 weak_dict = {}
