@@ -98,7 +98,7 @@ async def get_script():
 async def get_style():
     return FileResponse("style.css")
 
-# --- 1. ГЕНЕРАЦИЯ ВОПРОСА С ЗАЩИТОЙ ОТ ПОВТОРОВ ---
+# --- 1. ГЕНЕРАЦИЯ ВОПРОСА С ЖЕСТКИМ ФИЛЬТРОМ ПОВТОРОВ ---
 @app.post("/api/get-question")
 async def get_question(request: Request):
     try:
@@ -113,7 +113,6 @@ async def get_question(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Используем LOWER для надежного поиска по имени
                 cur.execute("SELECT * FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 user_data = cur.fetchone()
                 if not user_data:
@@ -139,7 +138,6 @@ async def get_question(request: Request):
                         recent_questions_list = []
             conn.close()
 
-        # Выбор подтемы с учетом слабых мест
         active_weak = [k for k, v in weak_dict.items() if v > 0 and k not in recent_subtopics_list[-3:]]
         
         if active_weak and random.random() < 0.3:
@@ -162,8 +160,7 @@ async def get_question(request: Request):
 
             chosen_topic, chosen_subcategory = random.choice(available_pairs)
 
-        # Передаем список запрещенных вопросов прямо в промпт модели
-        forbidden_questions_text = "\n".join([f"- {q}" for q in recent_questions_list[-15:]])
+        forbidden_questions_text = "\n".join([f"- {q}" for q in recent_questions_list[-20:]])
 
         system_prompt = f"""
         Ты — профессор Фил, добрый учитель для ребёнка 6 лет. Имя ученика: {user_name}.
@@ -172,7 +169,7 @@ async def get_question(request: Request):
         Сгенерируй ОЧЕНЬ ПРОСТОЙ детский вопрос по теме: "{chosen_topic}" (подтема: "{chosen_subcategory}").
         
         КРИТИЧЕСКИ ВАЖНО (ЗАПРЕТ НА ПОВТОРЫ):
-        Ни в коем случае не создавай вопросы, которые уже были в этом списке запрещенных вопросов:
+        Ни в коем случае не создавай вопросы, которые уже есть в списке запрещенных ниже:
         {forbidden_questions_text}
         Придумай абсолютно новый, уникальный вопрос!
 
@@ -197,18 +194,16 @@ async def get_question(request: Request):
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.7
-        )
+            temperature=0.8
+        ]
 
-        response_content = completion.choices[0].message.content
-        question_data = json.loads(response_content)
+        question_data = json.loads(completion.choices[0].message.content)
         question_text = question_data.get("question", "")
 
         question_data["user_score"] = score
         question_data["topic"] = chosen_topic
         question_data["subcategory"] = chosen_subcategory
 
-        # Обновляем списки истории
         used_pair = f"{chosen_topic}: {chosen_subcategory}"
         recent_subtopics_list.append(used_pair)
         if len(recent_subtopics_list) > 25:
@@ -216,8 +211,8 @@ async def get_question(request: Request):
 
         if question_text:
             recent_questions_list.append(question_text)
-            if len(recent_questions_list) > 20:
-                recent_questions_list = recent_questions_list[-20:]
+            if len(recent_questions_list) > 25:
+                recent_questions_list = recent_questions_list[-25:]
 
         conn = get_db_connection()
         if conn:
@@ -248,7 +243,7 @@ async def get_question(request: Request):
             "user_score": 0
         }
 
-# --- 2. НАДЕЖНОЕ СОХРАНЕНИЕ ОЧКОВ ЧЕРЕЗ UPSERT ---
+# --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
@@ -267,7 +262,6 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                # Сначала достаем текущие слабые места
                 cur.execute("SELECT weak_topics FROM child_profiles WHERE LOWER(user_name) = LOWER(%s)", (user_name,))
                 row = cur.fetchone()
                 
@@ -287,8 +281,6 @@ async def submit_answer(request: Request):
                     weak_dict[full_topic_key] = weak_dict.get(full_topic_key, 0) + 1
 
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
-
-                # Используем UPSERT (INSERT ... ON CONFLICT), чтобы профиль гарантированно создавался или обновлялся
                 score_increment = 1 if is_correct else 0
                 
                 cur.execute("""
@@ -313,7 +305,7 @@ async def submit_answer(request: Request):
         print("Ошибка сохранения в базу:", e)
         return {"status": "error", "message": str(e)}
 
-# --- 3. ОБУЧАЮЩИЙ ЧАТ ---
+# --- 3. ЧАТ С ИИ ---
 @app.post("/api/chat")
 async def chat_with_robot(request: Request):
     try:
