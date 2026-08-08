@@ -246,14 +246,17 @@ async def get_question(request: Request):
         }
 
 # --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
-# --- 2. ЖЕЛЕЗОБЕТОННОЕ СОХРАНЕНИЕ ОЧКОВ ---
 @app.post("/api/submit-answer")
 async def submit_answer(request: Request):
     try:
         data = await request.json()
-        user_name = data.get("name", "").strip().lower()
+        print("\n--- ОТЛАДКА СОХРАНЕНИЯ ОТВЕТА ---")
+        print("Получено от фронтенда:", data)
         
+        user_name = data.get("name", "").strip().lower()
         is_correct = data.get("is_correct")
+        print(f"is_correct: {is_correct} (тип: {type(is_correct)})")
+        
         if isinstance(is_correct, str):
             is_correct = is_correct.lower() in ("true", "1", "yes")
             
@@ -269,8 +272,10 @@ async def submit_answer(request: Request):
         conn = get_db_connection()
         if conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT weak_topics FROM child_profiles WHERE user_name = %s", (user_name,))
+                # Проверим, что сейчас в базе для этого юзера
+                cur.execute("SELECT score, weak_topics FROM child_profiles WHERE user_name = %s", (user_name,))
                 row = cur.fetchone()
+                print("Текущая запись в БД до обновления:", row)
                 
                 weak_dict = {}
                 if row and row["weak_topics"]:
@@ -289,24 +294,30 @@ async def submit_answer(request: Request):
 
                 new_weak_topics_str = json.dumps(weak_dict, ensure_ascii=False)
                 score_increment = 1 if is_correct else 0
+                print(f"Прибавка к очкам (score_increment): {score_increment}")
                 
+                # Используем COALESCE чтобы избежать проблем с NULL в базе
                 cur.execute("""
                     INSERT INTO child_profiles (user_name, score, total_questions, weak_topics, recent_subtopics, recent_questions)
                     VALUES (%s, %s, 1, %s, '[]', '[]')
                     ON CONFLICT (user_name) 
                     DO UPDATE SET 
-                        score = child_profiles.score + %s,
+                        score = COALESCE(child_profiles.score, 0) + %s,
                         total_questions = COALESCE(child_profiles.total_questions, 0) + 1,
                         weak_topics = %s
                     RETURNING score;
                 """, (user_name, score_increment, new_weak_topics_str, score_increment, new_weak_topics_str))
                 
                 updated_row = cur.fetchone()
-                if updated_row:
+                print("Строка после выполнения SQL (RETURNING):", updated_row)
+                
+                if updated_row and updated_row["score"] is not None:
                     new_score = updated_row["score"]
                 conn.commit()
             conn.close()
 
+        print(правляющий_текст := f"Итоговый счетец для отправки на фронт: {new_score}")
+        print("-----------------------------------")
         return {"status": "ok", "score": new_score}
     except Exception as e:
         print("Ошибка сохранения в базу:", e)
